@@ -1227,6 +1227,98 @@ jobs:
           echo "🎉 All wallets funded successfully!"
         fi
 
+    - name: Test LNURL-P and withdraw extensions
+      if: success()
+      run: |
+        echo "=== Testing LNURL-P pay links and withdraw links ==="
+        
+        # Source the saved keys
+        source lnbits_keys.env
+        
+        # Test LNURL-P: Pay to LNBITS1's pay link from LNBITS2
+        if [ -n "$LNBITS1_PAY_ID" ]; then
+          echo -e "\n==========================================" 
+          echo "Testing LNURL-P: Paying to LNBITS1 pay link from LNBITS2"
+          echo "=========================================="
+          
+          # Get the LNURL-P link details
+          echo "Getting LNURL-P link details for LNBITS1..."
+          PAY_LINK_INFO=$(curl -k -s "https://localhost:6443/lnurlp/api/v1/links/$LNBITS1_PAY_ID" \
+            -H "X-API-KEY: $LNBITS1_ADMIN_KEY")
+          
+          if echo "$PAY_LINK_INFO" | jq -e '.lnurl' > /dev/null; then
+            LNURL=$(echo "$PAY_LINK_INFO" | jq -r '.lnurl')
+            echo "LNURL: $LNURL"
+            
+            # Decode LNURL to get the callback URL
+            # Note: In production, you'd decode the lnurl, but for testing we can construct it
+            CALLBACK_URL="https://localhost:6443/lnurlp/api/v1/lnurl/cb/$LNBITS1_PAY_ID"
+            
+            # Get payment request from LNURL-P endpoint
+            echo "Getting payment request from LNURL-P endpoint..."
+            PAY_REQUEST=$(curl -k -s "$CALLBACK_URL?amount=1000000")
+            
+            if echo "$PAY_REQUEST" | jq -e '.pr' > /dev/null; then
+              PAYMENT_REQUEST=$(echo "$PAY_REQUEST" | jq -r '.pr')
+              echo "Got payment request, paying from LNBITS2..."
+              
+              # Pay the LNURL-P invoice from LNBITS2
+              PAYMENT=$(curl -s -X POST "http://localhost:5002/api/v1/payments" \
+                -H "X-API-KEY: $LNBITS2_ADMIN_KEY" \
+                -H "Content-Type: application/json" \
+                -d "{\"out\": true, \"bolt11\": \"$PAYMENT_REQUEST\"}")
+              
+              if echo "$PAYMENT" | jq -e '.payment_hash' > /dev/null; then
+                echo "✅ Successfully paid LNURL-P link! Payment from LNBITS2 to LNBITS1's pay link"
+              else
+                echo "⚠️ LNURL-P payment failed: $PAYMENT"
+              fi
+            else
+              echo "⚠️ Failed to get payment request from LNURL-P: $PAY_REQUEST"
+            fi
+          else
+            echo "⚠️ Could not get LNURL-P link info"
+          fi
+        else
+          echo "Skipping LNURL-P test (no pay link created for LNBITS1)"
+        fi
+        
+        # Test withdraw link: LNBITS3 withdraws from LNBITS1's withdraw link
+        if [ -n "$LNBITS1_WITHDRAW_ID" ]; then
+          echo -e "\n==========================================" 
+          echo "Testing Withdraw: LNBITS3 withdraws from LNBITS1 link"
+          echo "=========================================="
+          
+          # Create invoice on LNBITS3 to receive the withdrawal
+          echo "Creating invoice on LNBITS3 to receive withdrawal..."
+          WITHDRAW_INVOICE=$(curl -s -X POST "http://localhost:5003/api/v1/payments" \
+            -H "X-API-KEY: $LNBITS3_INVOICE_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{"out": false, "amount": 100, "memo": "Withdraw from LNBITS1"}')
+          
+          if echo "$WITHDRAW_INVOICE" | jq -e '.bolt11' > /dev/null; then
+            WITHDRAW_BOLT11=$(echo "$WITHDRAW_INVOICE" | jq -r '.bolt11')
+            
+            # Use the withdraw link
+            echo "Using withdraw link from LNBITS1..."
+            WITHDRAW_RESPONSE=$(curl -k -s -X POST "https://localhost:6443/withdraw/api/v1/lnurl/$LNBITS1_WITHDRAW_ID" \
+              -H "Content-Type: application/json" \
+              -d "{\"pr\": \"$WITHDRAW_BOLT11\"}")
+            
+            if echo "$WITHDRAW_RESPONSE" | jq -e '.payment_hash' > /dev/null; then
+              echo "✅ Successfully used withdraw link! Funds sent from LNBITS1 to LNBITS3"
+            else
+              echo "⚠️ Withdraw failed: $WITHDRAW_RESPONSE"
+            fi
+          else
+            echo "⚠️ Failed to create invoice for withdrawal: $WITHDRAW_INVOICE"
+          fi
+        else
+          echo "Skipping withdraw test (no withdraw link created for LNBITS1)"
+        fi
+        
+        echo -e "\n✅ Extension testing complete!"
+
     - name: Test transactions between LNbits instances
       if: success()
       run: |
