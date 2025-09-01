@@ -992,15 +992,28 @@ jobs:
           
           # Test lnurlp by creating a pay link
           echo "Creating LNURL-P pay link..."
-          PAY_LINK=$(curl -s -X POST "http://localhost:$PORT/lnurlp/api/v1/links" \
-            -H "X-API-KEY: $ADMIN_KEY" \
-            -H "Content-Type: application/json" \
-            -d '{
-              "description": "Test Pay Link",
-              "min": 100,
-              "max": 10000,
-              "comment_chars": 255
-            }')
+          # Use HTTPS proxy for LNBITS1, HTTP for others (proxy only configured for port 5001)
+          if [ "$PORT" = "5001" ]; then
+            PAY_LINK=$(curl -k -s -X POST "https://localhost:6443/lnurlp/api/v1/links" \
+              -H "X-API-KEY: $ADMIN_KEY" \
+              -H "Content-Type: application/json" \
+              -d '{
+                "description": "Test Pay Link",
+                "min": 100,
+                "max": 10000,
+                "comment_chars": 255
+              }')
+          else
+            PAY_LINK=$(curl -s -X POST "http://localhost:$PORT/lnurlp/api/v1/links" \
+              -H "X-API-KEY: $ADMIN_KEY" \
+              -H "Content-Type: application/json" \
+              -d '{
+                "description": "Test Pay Link",
+                "min": 100,
+                "max": 10000,
+                "comment_chars": 255
+              }')
+          fi
           
           if echo "$PAY_LINK" | jq -e '.id' > /dev/null; then
             PAY_ID=$(echo "$PAY_LINK" | jq -r '.id')
@@ -1012,17 +1025,32 @@ jobs:
           
           # Test withdraw by creating a withdraw link
           echo "Creating withdraw link..."
-          WITHDRAW_LINK=$(curl -s -X POST "http://localhost:$PORT/withdraw/api/v1/links" \
-            -H "X-API-KEY: $ADMIN_KEY" \
-            -H "Content-Type: application/json" \
-            -d '{
-              "title": "Test Withdraw Link",
-              "min_withdrawable": 10,
-              "max_withdrawable": 1000,
-              "uses": 10,
-              "wait_time": 1,
-              "is_unique": true
-            }')
+          # Use HTTPS proxy for LNBITS1, HTTP for others
+          if [ "$PORT" = "5001" ]; then
+            WITHDRAW_LINK=$(curl -k -s -X POST "https://localhost:6443/withdraw/api/v1/links" \
+              -H "X-API-KEY: $ADMIN_KEY" \
+              -H "Content-Type: application/json" \
+              -d '{
+                "title": "Test Withdraw Link",
+                "min_withdrawable": 10,
+                "max_withdrawable": 1000,
+                "uses": 10,
+                "wait_time": 1,
+                "is_unique": true
+              }')
+          else
+            WITHDRAW_LINK=$(curl -s -X POST "http://localhost:$PORT/withdraw/api/v1/links" \
+              -H "X-API-KEY: $ADMIN_KEY" \
+              -H "Content-Type: application/json" \
+              -d '{
+                "title": "Test Withdraw Link",
+                "min_withdrawable": 10,
+                "max_withdrawable": 1000,
+                "uses": 10,
+                "wait_time": 1,
+                "is_unique": true
+              }')
+          fi
           
           if echo "$WITHDRAW_LINK" | jq -e '.id' > /dev/null; then
             WITHDRAW_ID=$(echo "$WITHDRAW_LINK" | jq -r '.id')
