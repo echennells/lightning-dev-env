@@ -844,74 +844,115 @@ jobs:
         echo "Certificate details:"
         openssl x509 -in ssl/lnbits.crt -text -noout | grep -E "Subject:|DNS:" || true
 
-    - name: Create GitHub Actions nginx proxy config  
+    - name: Create GitHub Actions nginx proxy config for all 3 LNbits
       if: success()
       run: |
-        echo "=== Creating nginx proxy config for GitHub Actions ==="
+        echo "=== Creating nginx proxy config for all 3 LNbits instances ==="
         
-        # Create a modified nginx config that proxies to localhost:5001 instead of remote
+        # Create a single nginx config with 3 server blocks on different ports
         cat > github-proxy-nginx.conf << 'EOF'
+        # Proxy for LNBITS1 on port 6443
         server {
-            listen 443 ssl;
-            server_name localhost lnbits.example.com;
+            listen 6443 ssl;
+            server_name localhost lnbits1.example.com;
 
             ssl_certificate /etc/ssl/certs/lnbits.crt;
             ssl_certificate_key /etc/ssl/certs/lnbits.key;
             ssl_protocols TLSv1.2 TLSv1.3;
 
             location / {
-                # Proxy to local LNbits instance in GitHub Actions
                 proxy_pass http://host.docker.internal:5001;
-                
-                # CRITICAL: Fake the domain to trick LNURL validation
-                proxy_set_header Host lnbits.example.com;
+                proxy_set_header Host lnbits1.example.com;
                 proxy_set_header X-Real-IP $remote_addr;
                 proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
                 proxy_set_header X-Forwarded-Proto https;
-                proxy_set_header X-Forwarded-Host lnbits.example.com;
+                proxy_set_header X-Forwarded-Host lnbits1.example.com;
+            }
+        }
+        
+        # Proxy for LNBITS2 on port 6444
+        server {
+            listen 6444 ssl;
+            server_name localhost lnbits2.example.com;
+
+            ssl_certificate /etc/ssl/certs/lnbits.crt;
+            ssl_certificate_key /etc/ssl/certs/lnbits.key;
+            ssl_protocols TLSv1.2 TLSv1.3;
+
+            location / {
+                proxy_pass http://host.docker.internal:5002;
+                proxy_set_header Host lnbits2.example.com;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto https;
+                proxy_set_header X-Forwarded-Host lnbits2.example.com;
+            }
+        }
+        
+        # Proxy for LNBITS3 on port 6445
+        server {
+            listen 6445 ssl;
+            server_name localhost lnbits3.example.com;
+
+            ssl_certificate /etc/ssl/certs/lnbits.crt;
+            ssl_certificate_key /etc/ssl/certs/lnbits.key;
+            ssl_protocols TLSv1.2 TLSv1.3;
+
+            location / {
+                proxy_pass http://host.docker.internal:5003;
+                proxy_set_header Host lnbits3.example.com;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto https;
+                proxy_set_header X-Forwarded-Host lnbits3.example.com;
             }
         }
         EOF
         
-        echo "✅ GitHub Actions nginx config created"
+        echo "✅ Created unified nginx config for all 3 LNbits instances"
 
-    - name: Setup HTTPS proxy for domain spoofing
+    - name: Setup HTTPS proxy for all 3 LNbits instances
       if: success()
       run: |
-        echo "=== Setting up HTTPS proxy for LNURL domain spoofing ==="
+        echo "=== Setting up HTTPS proxy for all 3 LNbits instances ==="
         
         # Clean up any existing proxy
         docker stop github-lnbits-proxy 2>/dev/null || true
         docker rm github-lnbits-proxy 2>/dev/null || true
         
-        # Start nginx proxy with domain spoofing
+        # Start single nginx proxy with all 3 ports exposed
         docker run -d --name github-lnbits-proxy \
-          -p 6443:443 \
+          -p 6443:6443 \
+          -p 6444:6444 \
+          -p 6445:6445 \
           --add-host=host.docker.internal:host-gateway \
           -v "$(pwd)/github-proxy-nginx.conf":/etc/nginx/conf.d/default.conf:ro \
           -v "$(pwd)/ssl":/etc/ssl/certs:ro \
           nginx:alpine
         
-        echo "✅ HTTPS proxy started on port 6443"
+        echo "✅ HTTPS proxy started with ports 6443, 6444, 6445"
         sleep 3
         
-        # Test proxy connectivity
-        echo "Testing proxy connection..."
-        for i in {1..30}; do
-          if curl -k -s https://localhost:6443/api/v1/health >/dev/null 2>&1; then
-            echo "✅ Proxy connection working"
-            break
-          fi
-          if [ $i -eq 30 ]; then
-            echo "❌ Proxy connection failed after 30 attempts"
-            echo "Checking proxy logs..."
-            docker logs github-lnbits-proxy
-            exit 1
-            exit 1
-          fi
-          echo "Attempt $i/30: Waiting for proxy..."
-          sleep 2
+        # Test all proxy connections
+        echo "Testing proxy connections..."
+        for PORT in 6443 6444 6445; do
+          echo "Testing port $PORT..."
+          for i in {1..30}; do
+            if curl -k -s https://localhost:$PORT/api/v1/health >/dev/null 2>&1; then
+              echo "✅ Port $PORT working"
+              break
+            fi
+            if [ $i -eq 30 ]; then
+              echo "❌ Port $PORT failed after 30 attempts"
+              echo "Checking proxy logs..."
+              docker logs github-lnbits-proxy
+              exit 1
+            fi
+            sleep 1
+          done
         done
+        
+        echo "✅ All proxy ports operational"
 
     - name: Setup all 3 LNbits instances with extensions
       if: success()
@@ -992,28 +1033,16 @@ jobs:
           
           # Test lnurlp by creating a pay link
           echo "Creating LNURL-P pay link..."
-          # Use HTTPS proxy for LNBITS1, HTTP for others (proxy only configured for port 5001)
-          if [ "$PORT" = "5001" ]; then
-            PAY_LINK=$(curl -k -s -X POST "https://localhost:6443/lnurlp/api/v1/links" \
-              -H "X-API-KEY: $ADMIN_KEY" \
-              -H "Content-Type: application/json" \
-              -d '{
-                "description": "Test Pay Link",
-                "min": 100,
-                "max": 10000,
-                "comment_chars": 255
-              }')
-          else
-            PAY_LINK=$(curl -s -X POST "http://localhost:$PORT/lnurlp/api/v1/links" \
-              -H "X-API-KEY: $ADMIN_KEY" \
-              -H "Content-Type: application/json" \
-              -d '{
-                "description": "Test Pay Link",
-                "min": 100,
-                "max": 10000,
-                "comment_chars": 255
-              }')
-          fi
+          # Use HTTPS proxy with correct port for each instance
+          PAY_LINK=$(curl -k -s -X POST "https://localhost:$PROXY_PORT/lnurlp/api/v1/links" \
+            -H "X-API-KEY: $ADMIN_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "description": "Test Pay Link",
+              "min": 100,
+              "max": 10000,
+              "comment_chars": 255
+            }')
           
           if echo "$PAY_LINK" | jq -e '.id' > /dev/null; then
             PAY_ID=$(echo "$PAY_LINK" | jq -r '.id')
@@ -1025,32 +1054,18 @@ jobs:
           
           # Test withdraw by creating a withdraw link
           echo "Creating withdraw link..."
-          # Use HTTPS proxy for LNBITS1, HTTP for others
-          if [ "$PORT" = "5001" ]; then
-            WITHDRAW_LINK=$(curl -k -s -X POST "https://localhost:6443/withdraw/api/v1/links" \
-              -H "X-API-KEY: $ADMIN_KEY" \
-              -H "Content-Type: application/json" \
-              -d '{
-                "title": "Test Withdraw Link",
-                "min_withdrawable": 10,
-                "max_withdrawable": 1000,
-                "uses": 10,
-                "wait_time": 1,
-                "is_unique": true
-              }')
-          else
-            WITHDRAW_LINK=$(curl -s -X POST "http://localhost:$PORT/withdraw/api/v1/links" \
-              -H "X-API-KEY: $ADMIN_KEY" \
-              -H "Content-Type: application/json" \
-              -d '{
-                "title": "Test Withdraw Link",
-                "min_withdrawable": 10,
-                "max_withdrawable": 1000,
-                "uses": 10,
-                "wait_time": 1,
-                "is_unique": true
-              }')
-          fi
+          # Use HTTPS proxy with correct port for each instance
+          WITHDRAW_LINK=$(curl -k -s -X POST "https://localhost:$PROXY_PORT/withdraw/api/v1/links" \
+            -H "X-API-KEY: $ADMIN_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "title": "Test Withdraw Link",
+              "min_withdrawable": 10,
+              "max_withdrawable": 1000,
+              "uses": 10,
+              "wait_time": 1,
+              "is_unique": true
+            }')
           
           if echo "$WITHDRAW_LINK" | jq -e '.id' > /dev/null; then
             WITHDRAW_ID=$(echo "$WITHDRAW_LINK" | jq -r '.id')
@@ -1068,7 +1083,7 @@ jobs:
           echo "export ${NAME}_WITHDRAW_ID=$WITHDRAW_ID" >> lnbits_keys.env
         }
         
-        # Setup all 3 instances
+        # Setup all 3 instances with their HTTPS proxy ports
         setup_lnbits_instance 5001 "LNBITS1" 6443
         setup_lnbits_instance 5002 "LNBITS2" 6444
         setup_lnbits_instance 5003 "LNBITS3" 6445
