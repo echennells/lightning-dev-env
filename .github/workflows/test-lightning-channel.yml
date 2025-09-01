@@ -916,7 +916,7 @@ jobs:
     - name: Setup all 3 LNbits instances with extensions
       if: success()
       run: |
-        echo "=== Setting up all 3 LNbits instances with lnurlp and withdraw extensions ==="
+        echo "=== Setting up all 3 LNbits instances and testing extensions ==="
         
         # Function to setup LNbits instance
         setup_lnbits_instance() {
@@ -986,25 +986,51 @@ jobs:
           curl -s -X PUT "http://localhost:$PORT/api/v1/extension/withdraw/enable" -H "Authorization: Bearer $ACCESS_TOKEN" > /dev/null
           echo "✅ withdraw installed on $NAME"
           
-          # Check extension endpoints are available first
-          echo "Checking if extensions are accessible..."
-          LNURLP_CHECK=$(curl -s "http://localhost:$PORT/lnurlp/api/v1/currencies" 2>&1)
-          echo "lnurlp endpoint check: $LNURLP_CHECK"
+          # Test extensions are working
+          echo "Testing extensions are accessible..."
+          sleep 3  # Give extensions time to initialize
           
-          WITHDRAW_CHECK=$(curl -s "http://localhost:$PORT/withdraw/api/v1" 2>&1) 
-          echo "withdraw endpoint check: $WITHDRAW_CHECK"
+          # Test lnurlp by creating a pay link
+          echo "Creating LNURL-P pay link..."
+          PAY_LINK=$(curl -s -X POST "http://localhost:$PORT/lnurlp/api/v1/links" \
+            -H "X-API-KEY: $ADMIN_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "description": "Test Pay Link",
+              "min": 100,
+              "max": 10000,
+              "comment_chars": 255
+            }')
           
-          # Give extensions more time and restart if needed
-          echo "Giving extensions time to fully activate..."
-          sleep 5
+          if echo "$PAY_LINK" | jq -e '.id' > /dev/null; then
+            PAY_ID=$(echo "$PAY_LINK" | jq -r '.id')
+            echo "✅ LNURL-P working! Created pay link: $PAY_ID"
+          else
+            echo "⚠️ LNURL-P link creation failed (may need HTTPS): $PAY_LINK"
+            PAY_ID=""
+          fi
           
-          # Skip LNURL-P creation for now - focus on core payment functionality
-          echo "Skipping LNURL-P creation (validation issues) - focusing on core payments"
-          PAY_ID=""
+          # Test withdraw by creating a withdraw link
+          echo "Creating withdraw link..."
+          WITHDRAW_LINK=$(curl -s -X POST "http://localhost:$PORT/withdraw/api/v1/links" \
+            -H "X-API-KEY: $ADMIN_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "title": "Test Withdraw Link",
+              "min_withdrawable": 10,
+              "max_withdrawable": 1000,
+              "uses": 10,
+              "wait_time": 1,
+              "is_unique": true
+            }')
           
-          # Skip withdraw link creation for now - focus on core payment functionality  
-          echo "Skipping withdraw link creation (endpoint issues) - focusing on core payments"
-          WITHDRAW_ID=""
+          if echo "$WITHDRAW_LINK" | jq -e '.id' > /dev/null; then
+            WITHDRAW_ID=$(echo "$WITHDRAW_LINK" | jq -r '.id')
+            echo "✅ Withdraw extension working! Created link: $WITHDRAW_ID"
+          else
+            echo "⚠️ Withdraw link creation failed: $WITHDRAW_LINK"
+            WITHDRAW_ID=""
+          fi
           
           # Export variables for later use
           echo "export ${NAME}_ADMIN_KEY=$ADMIN_KEY" >> lnbits_keys.env
