@@ -1,0 +1,4 @@
+regtest-env/
+data/
+*.log
+.env

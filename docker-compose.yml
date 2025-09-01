@@ -1,0 +1,262 @@
+services:
+  bitcoind:
+    image: boltz/bitcoin-core:25.0
+    hostname: bitcoind
+    command:
+      - -regtest
+      - -server
+      - -rpcuser=lightning
+      - -rpcpassword=lightning
+      - -rpcallowip=0.0.0.0/0
+      - -rpcbind=0.0.0.0
+      - -zmqpubrawtx=tcp://0.0.0.0:29000
+      - -zmqpubrawblock=tcp://0.0.0.0:29001
+      - -fallbackfee=0.00001
+      - -txindex
+    volumes:
+      - bitcoin-data:/root/.bitcoin
+    ports:
+      - "18443:18443"
+      - "29000:29000"
+      - "29001:29001"
+
+  litd-1:
+    image: lightninglabs/lightning-terminal:v0.14.1-alpha
+    hostname: litd-1
+    depends_on:
+      - bitcoind
+    restart: unless-stopped
+    command:
+      - --network=regtest
+      - --lnd-mode=integrated
+      - --uipassword=password
+      - --httpslisten=0.0.0.0:8443
+      - --autopilot.disable
+      - --lnd.rpclisten=0.0.0.0:10009
+      - --lnd.restlisten=0.0.0.0:8080
+      - --lnd.listen=litd-1:9735
+      - --lnd.bitcoin.active
+      - --lnd.bitcoin.regtest
+      - --lnd.bitcoin.node=bitcoind
+      - --lnd.bitcoind.rpchost=bitcoind:18443
+      - --lnd.bitcoind.rpcuser=lightning
+      - --lnd.bitcoind.rpcpass=lightning
+      - --lnd.bitcoind.zmqpubrawtx=tcp://bitcoind:29000
+      - --lnd.bitcoind.zmqpubrawblock=tcp://bitcoind:29001
+      - --lnd.noseedbackup
+      - --lnd.tlsextradomain=litd-1
+      - --lnd.tlsextradomain=localhost
+      - --lnd.tlsextradomain=lnbits
+      # Enable Taproot channels in LND
+      - --lnd.protocol.option-scid-alias
+      - --lnd.protocol.zero-conf
+      - --lnd.accept-keysend
+      - --lnd.protocol.simple-taproot-chans
+      - --lnd.protocol.simple-taproot-overlay-chans
+      - --lnd.protocol.custom-message=17
+      # Taproot Assets configuration
+      - --taproot-assets-mode=integrated
+      - --taproot-assets.network=regtest
+      - --taproot-assets.universe.public-access=rw
+      - --taproot-assets.allow-public-uni-proof-courier
+      - --taproot-assets.universe.sync-all-assets
+      # Mock price oracle for RFQ testing
+      - --taproot-assets.experimental.rfq.priceoracleaddress=use_mock_price_oracle_service_promise_to_not_use_on_mainnet
+      - --taproot-assets.experimental.rfq.mockoracleassetsperbtc=100000
+    volumes:
+      - ./data/litd-1:/root/.lnd
+      - ./data/litd-1:/root/.lit
+      - ./data/tapd-1:/root/.tapd
+    ports:
+      - "8443:8443"  # Lightning Terminal UI
+      - "10009:10009" # LND gRPC
+      - "8080:8080"   # LND REST
+      - "9735:9735"   # Lightning P2P
+
+  litd-2:
+    image: lightninglabs/lightning-terminal:v0.14.1-alpha
+    hostname: litd-2
+    depends_on:
+      - bitcoind
+    restart: unless-stopped
+    command:
+      - --network=regtest
+      - --lnd-mode=integrated
+      - --uipassword=password
+      - --httpslisten=0.0.0.0:8444
+      - --autopilot.disable
+      - --lnd.rpclisten=0.0.0.0:10010
+      - --lnd.restlisten=0.0.0.0:8081
+      - --lnd.listen=litd-2:9736
+      - --lnd.bitcoin.active
+      - --lnd.bitcoin.regtest
+      - --lnd.bitcoin.node=bitcoind
+      - --lnd.bitcoind.rpchost=bitcoind:18443
+      - --lnd.bitcoind.rpcuser=lightning
+      - --lnd.bitcoind.rpcpass=lightning
+      - --lnd.bitcoind.zmqpubrawtx=tcp://bitcoind:29000
+      - --lnd.bitcoind.zmqpubrawblock=tcp://bitcoind:29001
+      - --lnd.noseedbackup
+      - --lnd.tlsextradomain=litd-2
+      - --lnd.tlsextradomain=localhost
+      # Enable Taproot channels in LND
+      - --lnd.protocol.option-scid-alias
+      - --lnd.protocol.zero-conf
+      - --lnd.accept-keysend
+      - --lnd.protocol.simple-taproot-chans
+      - --lnd.protocol.simple-taproot-overlay-chans
+      - --lnd.protocol.custom-message=17
+      # Taproot Assets configuration
+      - --taproot-assets-mode=integrated
+      - --taproot-assets.network=regtest
+      - --taproot-assets.universe.public-access=rw
+      - --taproot-assets.allow-public-uni-proof-courier
+      - --taproot-assets.universe.sync-all-assets
+      # Mock price oracle for RFQ testing
+      - --taproot-assets.experimental.rfq.priceoracleaddress=use_mock_price_oracle_service_promise_to_not_use_on_mainnet
+      - --taproot-assets.experimental.rfq.mockoracleassetsperbtc=100000
+    volumes:
+      - ./data/litd-2:/root/.lnd
+      - ./data/litd-2:/root/.lit
+      - ./data/tapd-2:/root/.tapd
+    ports:
+      - "8444:8444"  # Lightning Terminal UI
+      - "10010:10010" # LND gRPC
+      - "8081:8081"   # LND REST
+      - "9736:9736"   # Lightning P2P
+
+  lnd:
+    image: boltz/lnd:0.18.4-beta
+    hostname: lnd
+    depends_on:
+      - bitcoind
+    restart: on-failure
+    command:
+      - --listen=lnd:9737
+      - --rpclisten=lnd:10011
+      - --restlisten=lnd:8082
+      - --bitcoin.active
+      - --bitcoin.regtest
+      - --bitcoin.node=bitcoind
+      - --bitcoind.rpchost=bitcoind:18443
+      - --bitcoind.rpcuser=lightning
+      - --bitcoind.rpcpass=lightning
+      - --bitcoind.zmqpubrawtx=tcp://bitcoind:29000
+      - --bitcoind.zmqpubrawblock=tcp://bitcoind:29001
+      - --noseedbackup
+      - --tlsextradomain=lnd
+      - --tlsextradomain=localhost
+    volumes:
+      - ./data/lnd:/root/.lnd/
+    ports:
+      - "10011:10011"
+      - "8082:8082"
+      - "9737:9737"
+
+  lnbits-1:
+    image: lnbits/lnbits:v1.2.1
+    hostname: lnbits-1
+    depends_on:
+      - litd-1
+    restart: on-failure
+    environment:
+      # Use real LND backend for litd-1
+      - LNBITS_BACKEND_WALLET_CLASS=LndRestWallet
+      - LND_REST_ENDPOINT=https://litd-1:8080
+      - LND_REST_CERT=/app/lnd/tls.cert
+      - LND_REST_MACAROON=/app/lnd/data/chain/bitcoin/regtest/admin.macaroon
+      - LNBITS_SITE_TITLE=LNbits - litd-1
+      - LNBITS_DATA_FOLDER=/app/data
+      - FORWARDED_ALLOW_IPS=*
+      - DEBUG=true
+      - LNBITS_ADMIN_UI=true
+      - LNBITS_DEFAULT_WALLET_NAME=admin
+      - SUPER_USER=d08a3313322a4514af75d488bcc27eee
+      # LNBITS_EXTENSIONS_DEFAULT_INSTALL doesn't work in v1.2.1, use API instead
+      - LNBITS_BASEURL=https://localhost:5443
+      # Taproot Assets configuration for LNbits (if supported)
+      - TAPD_HOST=litd-1:10009
+      - TAPD_NETWORK=regtest
+      - TAPD_TLS_CERT_PATH=/app/lnd/tls.cert
+      - TAPD_MACAROON_PATH=/app/tapd/data/regtest/admin.macaroon
+    volumes:
+      - lnbits-1-data:/app/data
+      - ./data/litd-1:/app/lnd:ro
+      - ./data/tapd-1:/app/tapd:ro
+    ports:
+      - "5001:5000"
+
+  lnbits-2:
+    image: lnbits/lnbits:v1.2.1
+    hostname: lnbits-2
+    depends_on:
+      - litd-2
+    restart: on-failure
+    environment:
+      - LNBITS_BACKEND_WALLET_CLASS=LndRestWallet
+      - LND_REST_ENDPOINT=https://litd-2:8081
+      - LND_REST_CERT=/app/lnd/tls.cert
+      - LND_REST_MACAROON=/app/lnd/data/chain/bitcoin/regtest/admin.macaroon
+      - LNBITS_SITE_TITLE=LNbits - litd-2
+      - LNBITS_DATA_FOLDER=/app/data
+      - FORWARDED_ALLOW_IPS=*
+      - DEBUG=true
+      - LNBITS_ADMIN_UI=true
+      - LNBITS_DEFAULT_WALLET_NAME=admin
+      - SUPER_USER=e08a3313322a4514af75d488bcc27eef
+      - LNBITS_BASEURL=http://localhost:5002
+      # Taproot Assets configuration for LNbits (if supported)
+      - TAPD_HOST=litd-2:10010
+      - TAPD_NETWORK=regtest
+      - TAPD_TLS_CERT_PATH=/app/lnd/tls.cert
+      - TAPD_MACAROON_PATH=/app/tapd/data/regtest/admin.macaroon
+    volumes:
+      - lnbits-2-data:/app/data
+      - ./data/litd-2:/app/lnd:ro
+      - ./data/tapd-2:/app/tapd:ro
+    ports:
+      - "5002:5000"
+
+  lnbits-3:
+    image: lnbits/lnbits:v1.2.1
+    hostname: lnbits-3
+    depends_on:
+      - lnd
+    restart: on-failure
+    environment:
+      - LNBITS_BACKEND_WALLET_CLASS=LndRestWallet
+      - LND_REST_ENDPOINT=https://lnd:8082
+      - LND_REST_CERT=/app/lnd/tls.cert
+      - LND_REST_MACAROON=/app/lnd/data/chain/bitcoin/regtest/admin.macaroon
+      - LNBITS_SITE_TITLE=LNbits - lnd
+      - LNBITS_DATA_FOLDER=/app/data
+      - FORWARDED_ALLOW_IPS=*
+      - DEBUG=true
+      - LNBITS_ADMIN_UI=true
+      - LNBITS_DEFAULT_WALLET_NAME=admin
+      - SUPER_USER=f08a3313322a4514af75d488bcc27ee0
+      - LNBITS_BASEURL=http://localhost:5003
+    volumes:
+      - lnbits-3-data:/app/data
+      - ./data/lnd:/app/lnd:ro
+    ports:
+      - "5003:5000"
+
+  # HTTPS proxy for LNbits (for LNURL compatibility in CI/CD)
+  lnbits-https-proxy:
+    image: nginx:alpine
+    hostname: lnbits-https
+    depends_on:
+      - lnbits-1
+    restart: unless-stopped
+    ports:
+      - "5443:443"
+    volumes:
+      - ./nginx-lnbits.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./ssl:/etc/ssl/certs:ro
+
+volumes:
+  bitcoin-data:
+  lnbits-1-data:
+  lnbits-2-data:
+  lnbits-3-data:
