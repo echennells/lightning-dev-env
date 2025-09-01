@@ -1,0 +1,5 @@
+=== COMPLETE LNBITS SETUP WITH EXTENSIONS AND HTTPS ===
+Running against remote host: 170.75.172.6:5000
+
+Step 1: Creating admin user on 170.75.172.6:5000...
+❌ First install failed: {"detail":"This is not your first install"}
