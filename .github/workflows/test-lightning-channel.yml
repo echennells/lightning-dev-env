@@ -915,6 +915,8 @@ jobs:
       if: success()
       run: |
         echo "=== Setting up HTTPS proxy for all 3 LNbits instances ==="
+        echo "HTTPS proxy is REQUIRED for LNbits extensions to work properly!"
+        echo "Extensions need HTTPS for LNURL generation and proper authentication."
         
         # Clean up any existing proxy
         docker stop github-lnbits-proxy 2>/dev/null || true
@@ -1006,6 +1008,8 @@ jobs:
           echo "✅ Admin key for $NAME: ${ADMIN_KEY:0:20}..."
           
           # Install lnurlp extension
+          # IMPORTANT: Extension management uses Authorization: Bearer <access_token>
+          # IMPORTANT: Extension functionality (creating links) uses X-API-KEY: <admin_key> via HTTPS
           echo "Installing lnurlp extension on $NAME..."
           curl -s -X POST http://localhost:$PORT/api/v1/extension \
             -H "Content-Type: application/json" \
@@ -1031,9 +1035,9 @@ jobs:
           echo "Testing extensions are accessible..."
           sleep 3  # Give extensions time to initialize
           
-          # Test lnurlp by creating a pay link
-          echo "Creating LNURL-P pay link..."
-          # Use HTTPS proxy with correct port for each instance
+          # Test lnurlp by creating a pay link via HTTPS proxy (required for LNURL generation)
+          echo "Creating LNURL-P pay link via HTTPS proxy..."
+          # Use HTTPS proxy with correct port for each instance - X-API-KEY auth for functional APIs
           PAY_LINK=$(curl -k -s -X POST "https://localhost:$PROXY_PORT/lnurlp/api/v1/links" \
             -H "X-API-KEY: $ADMIN_KEY" \
             -H "Content-Type: application/json" \
@@ -1052,19 +1056,21 @@ jobs:
             PAY_ID=""
           fi
           
-          # Test withdraw by creating a withdraw link
-          echo "Creating withdraw link..."
-          # Use HTTPS proxy with correct port for each instance
+          # Test withdraw by creating a withdraw link via HTTPS proxy (required for LNURL generation)  
+          echo "Creating withdraw link via HTTPS proxy..."
+          # Use HTTPS proxy with correct port for each instance - X-API-KEY auth for functional APIs
           WITHDRAW_LINK=$(curl -k -s -X POST "https://localhost:$PROXY_PORT/withdraw/api/v1/links" \
             -H "X-API-KEY: $ADMIN_KEY" \
             -H "Content-Type: application/json" \
             -d '{
+              "is_unique": true,
+              "use_custom": false,
               "title": "Test Withdraw Link",
               "min_withdrawable": 10,
+              "wait_time": 1,
               "max_withdrawable": 1000,
               "uses": 10,
-              "wait_time": 1,
-              "is_unique": true
+              "custom_url": null
             }')
           
           if echo "$WITHDRAW_LINK" | jq -e '.id' > /dev/null; then
