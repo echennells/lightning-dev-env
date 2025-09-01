@@ -1299,13 +1299,26 @@ jobs:
           if echo "$WITHDRAW_INVOICE" | jq -e '.bolt11' > /dev/null; then
             WITHDRAW_BOLT11=$(echo "$WITHDRAW_INVOICE" | jq -r '.bolt11')
             
-            # Use the withdraw link
+            # Use the withdraw link - proper LNURL flow
             echo "Using withdraw link from LNBITS1..."
-            WITHDRAW_RESPONSE=$(curl -k -s -X POST "https://localhost:6443/withdraw/api/v1/lnurl/$LNBITS1_WITHDRAW_ID" \
-              -H "Content-Type: application/json" \
-              -d "{\"pr\": \"$WITHDRAW_BOLT11\"}")
             
-            if echo "$WITHDRAW_RESPONSE" | jq -e '.payment_hash' > /dev/null; then
+            # Step 1: Get withdraw parameters including k1 and callback URL
+            echo "Getting withdraw parameters..."
+            WITHDRAW_PARAMS=$(curl -k -s "https://localhost:6443/withdraw/api/v1/lnurl/$LNBITS1_WITHDRAW_ID")
+            
+            if echo "$WITHDRAW_PARAMS" | jq -e '.k1' > /dev/null; then
+              K1=$(echo "$WITHDRAW_PARAMS" | jq -r '.k1')
+              echo "Got k1 parameter for withdrawal"
+              
+              # Step 2: Execute withdrawal with callback endpoint
+              echo "Executing withdrawal with payment request..."
+              WITHDRAW_RESPONSE=$(curl -k -s "https://localhost:6443/withdraw/api/v1/lnurl/cb/$LNBITS1_WITHDRAW_ID?k1=$K1&pr=$WITHDRAW_BOLT11")
+            else
+              echo "Failed to get withdraw parameters: $WITHDRAW_PARAMS"
+              WITHDRAW_RESPONSE="{\"reason\": \"Failed to get withdraw parameters\"}"
+            fi
+            
+            if echo "$WITHDRAW_RESPONSE" | jq -e '.status' > /dev/null && [ "$(echo "$WITHDRAW_RESPONSE" | jq -r '.status')" = "OK" ]; then
               echo "✅ Successfully used withdraw link! Funds sent from LNBITS1 to LNBITS3"
             else
               echo "⚠️ Withdraw failed: $WITHDRAW_RESPONSE"
