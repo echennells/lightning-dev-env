@@ -915,6 +915,8 @@ jobs:
       if: success()
       run: |
         echo "=== Setting up HTTPS proxy for all 3 LNbits instances ==="
+        echo "HTTPS proxy is REQUIRED for LNbits extensions to work properly!"
+        echo "Extensions need HTTPS for LNURL generation and proper authentication."
         
         # Clean up any existing proxy
         docker stop github-lnbits-proxy 2>/dev/null || true
@@ -958,6 +960,11 @@ jobs:
       if: success()
       run: |
         echo "=== Setting up all 3 LNbits instances and testing extensions ==="
+        
+        # IMPORTANT: LNbits Extension Authentication Pattern (from HAR analysis):
+        # - Extension management (install/activate/enable): Authorization: Bearer <access_token>
+        # - Extension functionality (creating links): X-API-KEY: <admin_key> via HTTPS proxy
+        # - HTTPS proxy is REQUIRED for LNURL generation to work properly
         
         # Function to setup LNbits instance
         setup_lnbits_instance() {
@@ -1052,19 +1059,22 @@ jobs:
             PAY_ID=""
           fi
           
-          # Test withdraw by creating a withdraw link
-          echo "Creating withdraw link..."
-          # Use HTTPS proxy with correct port for each instance
+          # Test withdraw by creating a withdraw link via HTTPS proxy (required for LNURL generation)
+          echo "Creating withdraw link via HTTPS proxy..."
+          # Use HTTPS proxy with correct port for each instance - X-API-KEY auth for functional APIs
+          # IMPORTANT: Use HAR-discovered correct format for withdraw link payload
           WITHDRAW_LINK=$(curl -k -s -X POST "https://localhost:$PROXY_PORT/withdraw/api/v1/links" \
             -H "X-API-KEY: $ADMIN_KEY" \
             -H "Content-Type: application/json" \
             -d '{
+              "is_unique": true,
+              "use_custom": false,
               "title": "Test Withdraw Link",
               "min_withdrawable": 10,
+              "wait_time": 1,
               "max_withdrawable": 1000,
               "uses": 10,
-              "wait_time": 1,
-              "is_unique": true
+              "custom_url": null
             }')
           
           if echo "$WITHDRAW_LINK" | jq -e '.id' > /dev/null; then
