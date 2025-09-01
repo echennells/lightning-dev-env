@@ -1069,10 +1069,12 @@ jobs:
           
           if echo "$WITHDRAW_LINK" | jq -e '.id' > /dev/null; then
             WITHDRAW_ID=$(echo "$WITHDRAW_LINK" | jq -r '.id')
-            echo "✅ Withdraw extension working! Created link: $WITHDRAW_ID"
+            WITHDRAW_HASH=$(echo "$WITHDRAW_LINK" | jq -r '.unique_hash')
+            echo "✅ Withdraw extension working! Created link ID: $WITHDRAW_ID, hash: $WITHDRAW_HASH"
           else
             echo "⚠️ Withdraw link creation failed: $WITHDRAW_LINK"
             WITHDRAW_ID=""
+            WITHDRAW_HASH=""
           fi
           
           # Export variables for later use
@@ -1081,6 +1083,7 @@ jobs:
           echo "export ${NAME}_WALLET_ID=$WALLET_ID" >> lnbits_keys.env
           echo "export ${NAME}_PAY_ID=$PAY_ID" >> lnbits_keys.env
           echo "export ${NAME}_WITHDRAW_ID=$WITHDRAW_ID" >> lnbits_keys.env
+          echo "export ${NAME}_WITHDRAW_HASH=$WITHDRAW_HASH" >> lnbits_keys.env
         }
         
         # Setup all 3 instances with their HTTPS proxy ports
@@ -1284,7 +1287,7 @@ jobs:
         fi
         
         # Test withdraw link: LNBITS3 withdraws from LNBITS1's withdraw link
-        if [ -n "$LNBITS1_WITHDRAW_ID" ]; then
+        if [ -n "$LNBITS1_WITHDRAW_HASH" ]; then
           echo -e "\n==========================================" 
           echo "Testing Withdraw: LNBITS3 withdraws from LNBITS1 link"
           echo "=========================================="
@@ -1304,7 +1307,7 @@ jobs:
             
             # Step 1: Get withdraw parameters including k1 and callback URL
             echo "Getting withdraw parameters..."
-            WITHDRAW_PARAMS=$(curl -k -s "https://localhost:6443/withdraw/api/v1/lnurl/$LNBITS1_WITHDRAW_ID")
+            WITHDRAW_PARAMS=$(curl -k -s "https://localhost:6443/withdraw/api/v1/lnurl/$LNBITS1_WITHDRAW_HASH")
             
             if echo "$WITHDRAW_PARAMS" | jq -e '.k1' > /dev/null; then
               K1=$(echo "$WITHDRAW_PARAMS" | jq -r '.k1')
@@ -1312,7 +1315,7 @@ jobs:
               
               # Step 2: Execute withdrawal with callback endpoint
               echo "Executing withdrawal with payment request..."
-              WITHDRAW_RESPONSE=$(curl -k -s "https://localhost:6443/withdraw/api/v1/lnurl/cb/$LNBITS1_WITHDRAW_ID?k1=$K1&pr=$WITHDRAW_BOLT11")
+              WITHDRAW_RESPONSE=$(curl -k -s "https://localhost:6443/withdraw/api/v1/lnurl/cb/$LNBITS1_WITHDRAW_HASH?k1=$K1&pr=$WITHDRAW_BOLT11")
             else
               echo "Failed to get withdraw parameters: $WITHDRAW_PARAMS"
               WITHDRAW_RESPONSE="{\"reason\": \"Failed to get withdraw parameters\"}"
@@ -1327,7 +1330,7 @@ jobs:
             echo "⚠️ Failed to create invoice for withdrawal: $WITHDRAW_INVOICE"
           fi
         else
-          echo "Skipping withdraw test (no withdraw link created for LNBITS1)"
+          echo "Skipping withdraw test (no withdraw link hash found for LNBITS1)"
         fi
         
         echo -e "\n✅ Extension testing complete!"
