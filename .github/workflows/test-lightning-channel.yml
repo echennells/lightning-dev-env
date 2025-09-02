@@ -1040,7 +1040,7 @@ jobs:
           curl -k -s -X POST https://localhost:$PROXY_PORT/api/v1/extension \
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer $ACCESS_TOKEN" \
-            -d '{"ext_id": "lnurlFlip", "archive": "https://github.com/echennells/lnurlFlip/archive/refs/heads/main.zip", "source_repo": "https://raw.githubusercontent.com/echennells/lnurlFlip/main/manifest.json"}' > /dev/null
+            -d '{"ext_id": "lnurlFlip", "archive": "https://github.com/echennells/lnurlFlip/archive/refs/heads/main.zip"}' > /dev/null
           
           curl -k -s -X PUT "https://localhost:$PROXY_PORT/api/v1/extension/lnurlFlip/activate" -H "Authorization: Bearer $ACCESS_TOKEN" > /dev/null
           curl -k -s -X PUT "https://localhost:$PROXY_PORT/api/v1/extension/lnurlFlip/enable" -H "Authorization: Bearer $ACCESS_TOKEN" > /dev/null
