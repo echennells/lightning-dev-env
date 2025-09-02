@@ -1111,11 +1111,13 @@ jobs:
           # Create lnurlFlip link that combines pay and withdraw
           if [ -n "$PAY_ID" ] && [ -n "$WITHDRAW_ID" ]; then
             echo "Creating lnurlFlip link..."
+            echo "Debug: Creating flip with PAY_ID=$PAY_ID, WITHDRAW_ID=$WITHDRAW_ID, WALLET_ID=$WALLET_ID"
             FLIP_LINK=$(curl -k -s -X POST "https://localhost:$PROXY_PORT/lnurlFlip/api/v1/lnurlflip" \
               -H "X-API-KEY: $ADMIN_KEY" \
               -H "Content-Type: application/json" \
               -d "{
                 \"name\": \"Test Flip $NAME\",
+                \"wallet\": \"$WALLET_ID\",
                 \"selectedLnurlp\": \"$PAY_ID\",
                 \"selectedLnurlw\": \"$WITHDRAW_ID\"
               }")
