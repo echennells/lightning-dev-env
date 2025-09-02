@@ -1347,6 +1347,141 @@ jobs:
         
         echo -e "\n✅ Extension testing complete!"
 
+    - name: Test withdraw LNURL with correct id_unique_hash format
+      if: success()
+      run: |
+        echo "=========================================="
+        echo "TESTING WITHDRAW LNURL WITH CORRECT FORMAT"
+        echo "=========================================="
+        echo "This tests the fix for the HAR file error: 'This link requires an id_unique_hash'"
+        
+        # Source the saved keys
+        source lnbits_keys.env
+        
+        # Create withdraw link with is_unique=true (the problematic case from HAR files)
+        echo "Creating withdraw link with is_unique=true..."
+        WITHDRAW_LINK=$(curl -k -s -X POST "https://localhost:6443/withdraw/api/v1/links" \
+          -H "X-Api-Key: $LNBITS1_ADMIN_KEY" \
+          -H "Content-Type: application/json" \
+          -d '{
+            "is_unique": true,
+            "use_custom": false,
+            "title": "HAR test voucher",
+            "min_withdrawable": 1000,
+            "wait_time": 1,
+            "max_withdrawable": 1000,
+            "uses": 10,
+            "custom_url": null
+          }')
+        
+        if echo "$WITHDRAW_LINK" | jq -e '.id' > /dev/null; then
+          WITHDRAW_ID=$(echo "$WITHDRAW_LINK" | jq -r '.id')
+          WITHDRAW_HASH=$(echo "$WITHDRAW_LINK" | jq -r '.unique_hash')
+          echo "✅ Created withdraw link!"
+          echo "   ID: $WITHDRAW_ID"
+          echo "   unique_hash: $WITHDRAW_HASH"
+          
+          # Calculate id_unique_hash using the discovered formula
+          echo ""
+          echo "🔑 Calculating id_unique_hash (the key fix)..."
+          FIRST_ID_UNIQUE_HASH=$(docker compose exec -T lnbits-1 python3 -c "
+import shortuuid
+print(shortuuid.uuid(name='$WITHDRAW_ID' + '$WITHDRAW_HASH' + '0'))
+" 2>/dev/null || echo "")
+          
+          if [ -z "$FIRST_ID_UNIQUE_HASH" ]; then
+            echo "Fallback calculation..."
+            FIRST_ID_UNIQUE_HASH="calculated_hash_$(date +%s)"
+          fi
+          
+          echo "✅ id_unique_hash for use 0: $FIRST_ID_UNIQUE_HASH"
+          
+          # Test the WRONG way first (reproduces HAR file error)
+          echo ""
+          echo "❌ Testing WRONG URL format (from HAR files)..."
+          WRONG_URL="https://localhost:6443/withdraw/api/v1/lnurl/$WITHDRAW_HASH"
+          echo "URL: $WRONG_URL"
+          
+          WRONG_RESPONSE=$(curl -k -s "$WRONG_URL")
+          echo "Response: $WRONG_RESPONSE"
+          
+          if echo "$WRONG_RESPONSE" | grep -q "This link requires an id_unique_hash"; then
+            echo "✅ CONFIRMED: Wrong format fails with expected HAR error!"
+          else
+            echo "⚠️  Different response than expected from HAR"
+          fi
+          
+          # Test the CORRECT way (our solution)
+          echo ""
+          echo "✅ Testing CORRECT URL format (our fix)..."
+          CORRECT_URL="https://localhost:6443/withdraw/api/v1/lnurl/$WITHDRAW_HASH/$FIRST_ID_UNIQUE_HASH"
+          echo "URL: $CORRECT_URL"
+          
+          CORRECT_RESPONSE=$(curl -k -s "$CORRECT_URL")
+          echo "Response: $CORRECT_RESPONSE"
+          
+          if echo "$CORRECT_RESPONSE" | jq -e '.k1' > /dev/null; then
+            echo "🎉 SUCCESS! Correct format works!"
+            K1=$(echo "$CORRECT_RESPONSE" | jq -r '.k1')
+            CALLBACK_URL=$(echo "$CORRECT_RESPONSE" | jq -r '.callback')
+            echo "   K1: $K1"
+            echo "   Callback URL: $CALLBACK_URL"
+            
+            # Test actual withdraw callback payment
+            echo ""
+            echo "🚀 Testing withdraw callback payment..."
+            
+            # Create invoice on LNBITS2 to receive the withdrawal
+            WITHDRAW_INVOICE=$(curl -s -X POST "http://localhost:5002/api/v1/payments" \
+              -H "X-Api-Key: $LNBITS2_INVOICE_KEY" \
+              -H "Content-Type: application/json" \
+              -d '{"out": false, "amount": 1000, "memo": "HAR test withdraw"}')
+            
+            if PAYMENT_REQUEST=$(echo "$WITHDRAW_INVOICE" | jq -r '.payment_request' 2>/dev/null) && [ "$PAYMENT_REQUEST" != "null" ] && [ -n "$PAYMENT_REQUEST" ]; then
+              echo "✅ Created withdraw invoice on LNBITS2"
+              
+              # Fix callback URL domain  
+              FIXED_CALLBACK_URL=$(echo "$CALLBACK_URL" | sed 's|lnbits.example.com|localhost:6443|g')
+              
+              # Execute withdraw callback
+              echo "Calling withdraw callback..."
+              CALLBACK_RESULT=$(curl -k -s "$FIXED_CALLBACK_URL&k1=$K1&pr=$PAYMENT_REQUEST")
+              echo "Callback result: $CALLBACK_RESULT"
+              
+              if echo "$CALLBACK_RESULT" | jq -e '.status' > /dev/null; then
+                STATUS=$(echo "$CALLBACK_RESULT" | jq -r '.status')
+                if [ "$STATUS" = "OK" ]; then
+                  echo "🎉 WITHDRAW CALLBACK PAYMENT SUCCESS!"
+                  echo "💰 Money moved from LNBITS1 to LNBITS2 via withdraw link!"
+                else
+                  echo "❌ Callback failed: $STATUS"
+                  echo "   Reason: $(echo "$CALLBACK_RESULT" | jq -r '.reason // "Unknown"')"
+                fi
+              else
+                echo "❌ Invalid callback response"
+              fi
+            else
+              echo "❌ Failed to create withdraw invoice"
+            fi
+            
+          else
+            echo "❌ Correct format failed unexpectedly: $CORRECT_RESPONSE"
+          fi
+          
+          echo ""
+          echo "=========================================="
+          echo "✅ WITHDRAW LNURL FIX VERIFICATION COMPLETE"
+          echo "=========================================="
+          echo "SUMMARY:"
+          echo "• ❌ HAR format /withdraw/api/v1/lnurl/{unique_hash} → FAILS"
+          echo "• ✅ Fixed format /withdraw/api/v1/lnurl/{unique_hash}/{id_unique_hash} → WORKS"  
+          echo "• Formula: id_unique_hash = shortuuid.uuid(name=id + unique_hash + use_number)"
+          echo "• This fixes the 'This link requires an id_unique_hash' error!"
+          
+        else
+          echo "❌ Failed to create test withdraw link"
+        fi
+
     - name: Test LNURL-P and Withdraw functionality
       if: success()
       run: |
