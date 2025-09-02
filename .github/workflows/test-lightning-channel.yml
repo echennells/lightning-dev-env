@@ -1034,11 +1034,11 @@ jobs:
           curl -k -s -X PUT "https://localhost:$PROXY_PORT/api/v1/extension/withdraw/enable" -H "Authorization: Bearer $ACCESS_TOKEN" > /dev/null
           echo "✅ withdraw installed on $NAME"
           
-          # Test extensions are working
-          echo "Testing extensions are accessible..."
+          # Create test links to prepare for later testing
+          echo "Creating test links for later testing..."
           sleep 3  # Give extensions time to initialize
           
-          # Test lnurlp by creating a pay link
+          # Create LNURL-P pay link for testing
           echo "Creating LNURL-P pay link..."
           # Use HTTPS proxy with correct port for each instance
           PAY_LINK=$(curl -k -s -X POST "https://localhost:$PROXY_PORT/lnurlp/api/v1/links" \
@@ -1053,13 +1053,13 @@ jobs:
           
           if echo "$PAY_LINK" | jq -e '.id' > /dev/null; then
             PAY_ID=$(echo "$PAY_LINK" | jq -r '.id')
-            echo "✅ LNURL-P working! Created pay link: $PAY_ID"
+            echo "✅ LNURL-P link created: $PAY_ID"
           else
-            echo "⚠️ LNURL-P link creation failed (may need HTTPS): $PAY_LINK"
+            echo "❌ LNURL-P link creation failed: $PAY_LINK"
             PAY_ID=""
           fi
           
-          # Test withdraw by creating a withdraw link via HTTPS proxy (required for LNURL generation)
+          # Create withdraw link for testing (via HTTPS proxy for LNURL generation)
           echo "Creating withdraw link via HTTPS proxy..."
           # Use HTTPS proxy with correct port for each instance - X-API-KEY auth for functional APIs
           # IMPORTANT: Use HAR-discovered correct format for withdraw link payload
@@ -1081,10 +1081,10 @@ jobs:
             WITHDRAW_ID=$(echo "$WITHDRAW_LINK" | jq -r '.id')
             WITHDRAW_HASH=$(echo "$WITHDRAW_LINK" | jq -r '.unique_hash')
             WITHDRAW_LNURL=$(echo "$WITHDRAW_LINK" | jq -r '.lnurl')
-            echo "✅ Withdraw extension working! Created link ID: $WITHDRAW_ID"
+            echo "✅ Withdraw link created: $WITHDRAW_ID"
             echo "   LNURL: ${WITHDRAW_LNURL:0:50}..."
           else
-            echo "⚠️ Withdraw link creation failed: $WITHDRAW_LINK"
+            echo "❌ Withdraw link creation failed: $WITHDRAW_LINK"
             WITHDRAW_ID=""
             WITHDRAW_HASH=""
             WITHDRAW_LNURL=""
