@@ -1244,20 +1244,25 @@ jobs:
           echo "🎉 All wallets funded successfully!"
         fi
 
-    - name: Test LNURL-P and withdraw extensions
+
+    - name: Test LNURL-P and Withdraw with Real Lightning Payments
       if: success()
       run: |
-        echo "=== Testing LNURL-P pay links and withdraw links ==="
+        echo "============================================"
+        echo "TESTING LNURL-P AND WITHDRAW WITH REAL PAYMENTS"
+        echo "============================================"
+        echo "This test combines real LNURL-P and withdraw testing with verified money movement"
         
         # Source the saved keys
         source lnbits_keys.env
         
-        # Test LNURL-P: Pay to LNBITS1's pay link from LNBITS2
+        # PART 1: Test LNURL-P (Real Payment)
+        echo -e "\n===========================================" 
+        echo "PART 1: Testing LNURL-P with real payment"
+        echo "LNBITS2 pays to LNBITS1's LNURL-P link"
+        echo "=========================================="
+        
         if [ -n "$LNBITS1_PAY_ID" ]; then
-          echo -e "\n==========================================" 
-          echo "Testing LNURL-P: Paying to LNBITS1 pay link from LNBITS2"
-          echo "=========================================="
-          
           # Get the LNURL-P link details
           echo "Getting LNURL-P link details for LNBITS1..."
           PAY_LINK_INFO=$(curl -k -s "https://localhost:6443/lnurlp/api/v1/links/$LNBITS1_PAY_ID" \
@@ -1267,8 +1272,7 @@ jobs:
             LNURL=$(echo "$PAY_LINK_INFO" | jq -r '.lnurl')
             echo "LNURL: $LNURL"
             
-            # Decode LNURL to get the callback URL
-            # Note: In production, you'd decode the lnurl, but for testing we can construct it
+            # Construct callback URL for testing
             CALLBACK_URL="https://localhost:6443/lnurlp/api/v1/lnurl/cb/$LNBITS1_PAY_ID"
             
             # CHECK BALANCES BEFORE PAYMENT
@@ -1317,77 +1321,30 @@ jobs:
                   echo "❌ WARNING: Balances don't show expected money movement!"
                   echo "   Expected: LNBITS1 +1000000, LNBITS2 -1000000+"
                   echo "   Actual:   LNBITS1 +$LNBITS1_DIFF, LNBITS2 -$LNBITS2_DIFF"
+                  exit 1
                 fi
               else
                 echo "❌ LNURL-P payment failed: $PAYMENT"
+                exit 1
               fi
             else
-              echo "⚠️ Failed to get payment request from LNURL-P: $PAY_REQUEST"
+              echo "❌ Failed to get payment request from LNURL-P: $PAY_REQUEST"
+              exit 1
             fi
           else
-            echo "⚠️ Could not get LNURL-P link info"
+            echo "❌ Could not get LNURL-P link info"
+            exit 1
           fi
         else
-          echo "Skipping LNURL-P test (no pay link created for LNBITS1)"
+          echo "❌ No pay link created for LNBITS1"
+          exit 1
         fi
         
-        # Test withdraw link: LNBITS3 withdraws from LNBITS1's withdraw link
-        if [ -n "$LNBITS1_WITHDRAW_HASH" ]; then
-          echo -e "\n==========================================" 
-          echo "Testing Withdraw: LNBITS3 withdraws from LNBITS1 link"
-          echo "=========================================="
-          
-          # Create invoice on LNBITS3 to receive the withdrawal
-          echo "Creating invoice on LNBITS3 to receive withdrawal..."
-          WITHDRAW_INVOICE=$(curl -s -X POST "http://localhost:5003/api/v1/payments" \
-            -H "X-API-KEY: $LNBITS3_INVOICE_KEY" \
-            -H "Content-Type: application/json" \
-            -d '{"out": false, "amount": 100, "memo": "Withdraw from LNBITS1"}')
-          
-          if echo "$WITHDRAW_INVOICE" | jq -e '.bolt11' > /dev/null; then
-            WITHDRAW_BOLT11=$(echo "$WITHDRAW_INVOICE" | jq -r '.bolt11')
-            
-            # Use the withdraw link - proper LNURL flow
-            echo "Using withdraw link from LNBITS1..."
-            
-            # Decode the LNURL to get the callback URL
-            echo "Decoding LNURL to get withdraw parameters..."
-            # The LNURL from creation response contains the callback URL encoded
-            # For testing, we can decode it or just simulate success since LNURL was generated
-            
-            if [ -n "$LNBITS1_WITHDRAW_LNURL" ]; then
-              echo "✅ Successfully got withdraw LNURL: ${LNBITS1_WITHDRAW_LNURL:0:50}..."
-              echo "✅ Withdraw functionality confirmed - LNURL generated successfully"
-              WITHDRAW_RESPONSE="{\"status\": \"OK\", \"reason\": \"Withdraw LNURL available for wallet use\"}"
-            else
-              echo "❌ No withdraw LNURL available"
-              WITHDRAW_RESPONSE="{\"reason\": \"No withdraw LNURL available\"}"
-            fi
-            
-            if echo "$WITHDRAW_RESPONSE" | jq -e '.status' > /dev/null && [ "$(echo "$WITHDRAW_RESPONSE" | jq -r '.status')" = "OK" ]; then
-              echo "✅ Successfully used withdraw link! Funds sent from LNBITS1 to LNBITS3"
-            else
-              echo "⚠️ Withdraw failed: $WITHDRAW_RESPONSE"
-            fi
-          else
-            echo "⚠️ Failed to create invoice for withdrawal: $WITHDRAW_INVOICE"
-          fi
-        else
-          echo "Skipping withdraw test (no withdraw link hash found for LNBITS1)"
-        fi
-        
-        echo -e "\n✅ Extension testing complete!"
-
-    - name: Test withdraw LNURL with correct id_unique_hash format
-      if: success()
-      run: |
+        # PART 2: Test Withdraw with HAR Fix (Real Payment)
+        echo -e "\n==========================================" 
+        echo "PART 2: Testing LNURL-Withdraw with HAR fix"
+        echo "Tests the fix for: 'This link requires an id_unique_hash'"
         echo "=========================================="
-        echo "TESTING WITHDRAW LNURL WITH CORRECT FORMAT"
-        echo "=========================================="
-        echo "This tests the fix for the HAR file error: 'This link requires an id_unique_hash'"
-        
-        # Source the saved keys
-        source lnbits_keys.env
         
         # Create withdraw link with is_unique=true (the problematic case from HAR files)
         echo "Creating withdraw link with is_unique=true..."
@@ -1520,140 +1477,44 @@ jobs:
                     echo "❌ WARNING: Balances don't show expected withdraw!"
                     echo "   Expected: LNBITS1 decreased, LNBITS2 increased by ~1000 msat"
                     echo "   Actual:   LNBITS1 -$LNBITS1_DIFF, LNBITS2 +$LNBITS2_DIFF"
+                    exit 1
                   fi
                 else
                   echo "❌ Withdraw callback failed: $STATUS"
                   echo "   Reason: $(echo "$CALLBACK_RESULT" | jq -r '.reason // "Unknown"')"
+                  exit 1
                 fi
               else
                 echo "❌ Invalid callback response: $CALLBACK_RESULT"
+                exit 1
               fi
             else
               echo "❌ Failed to create withdraw invoice!"
               echo "   Response: $WITHDRAW_INVOICE"
-              echo "   Trying to extract bolt11 field..."
+              exit 1
             fi
             
           else
             echo "❌ Correct format failed unexpectedly: $CORRECT_RESPONSE"
+            exit 1
           fi
           
           echo ""
-          echo "=========================================="
-          echo "✅ WITHDRAW LNURL FIX VERIFICATION COMPLETE"
-          echo "=========================================="
+          echo "============================================"
+          echo "✅ COMPLETE SUCCESS: BOTH LNURL TESTS PASSED"
+          echo "============================================"
           echo "SUMMARY:"
-          echo "• ❌ HAR format /withdraw/api/v1/lnurl/{unique_hash} → FAILS"
-          echo "• ✅ Fixed format /withdraw/api/v1/lnurl/{unique_hash}/{id_unique_hash} → WORKS"  
-          echo "• Formula: id_unique_hash = shortuuid.uuid(name=id + unique_hash + use_number)"
-          echo "• This fixes the 'This link requires an id_unique_hash' error!"
+          echo "• ✅ LNURL-P: Real payment with verified money movement"
+          echo "• ✅ LNURL-Withdraw: Real payment with verified money movement"  
+          echo "• ✅ HAR fix: Wrong format fails, correct format works"
+          echo "• ✅ Formula: id_unique_hash = shortuuid.uuid(name=id + unique_hash + use_number)"
+          echo "• 🎉 The HAR file issue is completely solved!"
           
         else
           echo "❌ Failed to create test withdraw link"
+          exit 1
         fi
 
-    - name: Test LNURL-P and Withdraw functionality
-      if: success()
-      run: |
-        echo "=== Testing LNURL-P Pay Links and Withdraw Links Functionality ==="
-        
-        # Source the saved keys  
-        source lnbits_keys.env
-        
-        # Test 1: Pay to LNBITS1's LNURL-P link from LNBITS2
-        echo -e "\n=========================================="
-        echo "Test 1: LNBITS2 pays to LNBITS1's LNURL-P link"
-        echo "=========================================="
-        
-        if [ -n "$LNBITS1_PAY_ID" ]; then
-          echo "Getting LNURL-P details for link: $LNBITS1_PAY_ID"
-          
-          # Get the LNURL-P link details to get the LNURL
-          PAY_DETAILS=$(curl -k -s "https://localhost:6443/lnurlp/api/v1/links/$LNBITS1_PAY_ID" \
-            -H "X-Api-Key: $LNBITS1_ADMIN_KEY")
-          
-          if LNURL_PAY=$(echo "$PAY_DETAILS" | jq -r '.lnurl' 2>/dev/null) && [ "$LNURL_PAY" != "null" ] && [ -n "$LNURL_PAY" ]; then
-            echo "LNURL: ${LNURL_PAY:0:50}..."
-            
-            # Decode LNURL to get callback URL (simple approach for testing)
-            echo "Getting payment request from LNURL-P endpoint..."
-            # For testing, we'll simulate the LNURL flow - in real usage, wallets decode the LNURL
-            CALLBACK_URL="https://localhost:6443/lnurlp/api/v1/links/$LNBITS1_PAY_ID/callback"
-            
-            # Get payment request for 2000 sats
-            PAY_REQUEST=$(curl -k -s "$CALLBACK_URL?amount=2000000" \
-              -H "X-Api-Key: $LNBITS1_ADMIN_KEY")
-            
-            if BOLT11=$(echo "$PAY_REQUEST" | jq -r '.pr' 2>/dev/null) && [ "$BOLT11" != "null" ] && [ -n "$BOLT11" ]; then
-              echo "Got payment request, paying from LNBITS2..."
-              
-              # Pay the invoice from LNBITS2
-              PAY_RESULT=$(curl -s -X POST "http://localhost:5002/api/v1/payments" \
-                -H "X-Api-Key: $LNBITS2_ADMIN_KEY" \
-                -H "Content-Type: application/json" \
-                -d "{\"out\": true, \"bolt11\": \"$BOLT11\"}")
-              
-              if echo "$PAY_RESULT" | jq -e '.payment_hash' > /dev/null 2>&1; then
-                echo "✅ Successfully paid LNURL-P link! Payment from LNBITS2 to LNBITS1's pay link"
-              else
-                echo "❌ Failed to pay LNURL-P link: $PAY_RESULT"
-              fi
-            else
-              echo "❌ Failed to get payment request: $PAY_REQUEST"
-            fi
-          else
-            echo "❌ Failed to get LNURL from pay link: $PAY_DETAILS"
-          fi
-        else
-          echo "❌ No LNURL-P link found for LNBITS1"
-        fi
-        
-        sleep 3
-        
-        # Test 2: Withdraw from LNBITS1's withdraw link to LNBITS3
-        echo -e "\n=========================================="  
-        echo "Test 2: LNBITS3 withdraws from LNBITS1's withdraw link"
-        echo "=========================================="
-        
-        if [ -n "$LNBITS1_WITHDRAW_LNURL" ]; then
-          # Create invoice on LNBITS3 to receive the withdrawal
-          echo "Creating invoice on LNBITS3 to receive withdrawal..."
-          WITHDRAW_INVOICE=$(curl -s -X POST "http://localhost:5003/api/v1/payments" \
-            -H "X-Api-Key: $LNBITS3_INVOICE_KEY" \
-            -H "Content-Type: application/json" \
-            -d '{"out": false, "amount": 1000, "memo": "Withdraw from LNBITS1"}')
-          
-          if WITHDRAW_BOLT11=$(echo "$WITHDRAW_INVOICE" | jq -r '.bolt11' 2>/dev/null) && [ "$WITHDRAW_BOLT11" != "null" ] && [ -n "$WITHDRAW_BOLT11" ]; then
-            echo "Using withdraw link from LNBITS1..."
-            echo "LNURL: ${LNBITS1_WITHDRAW_LNURL:0:50}..."
-            
-            # For testing, we'll simulate the LNURL-withdraw flow
-            # In reality, wallets would decode the LNURL and follow the full LNURL-withdraw protocol
-            # Here we'll use the callback URL from the withdraw link creation
-            CALLBACK_URL="https://localhost:6443/withdraw/api/v1/links/$LNBITS1_WITHDRAW_ID/callback"
-            
-            # Execute withdrawal (simplified version - real LNURL-withdraw has more steps)
-            echo "Executing withdrawal with payment request..."
-            WITHDRAW_RESULT=$(curl -k -s "$CALLBACK_URL" \
-              -H "X-Api-Key: $LNBITS1_ADMIN_KEY" \
-              -H "Content-Type: application/json" \
-              -d "{\"bolt11\": \"$WITHDRAW_BOLT11\", \"k1\": \"$(echo "$LNBITS1_WITHDRAW_LNURL" | head -c 32)\"}")
-            
-            if echo "$WITHDRAW_RESULT" | jq -e '.status' > /dev/null 2>&1 && [ "$(echo "$WITHDRAW_RESULT" | jq -r '.status')" = "OK" ]; then
-              echo "✅ Successfully used withdraw link! Funds withdrawn from LNBITS1 to LNBITS3"
-            else
-              # If callback doesn't work, that's OK - we confirmed the LNURL was generated
-              echo "✅ Withdraw LNURL generated successfully - ready for wallet use"
-              echo "   Note: Full LNURL-withdraw protocol requires wallet implementation"
-            fi
-          else
-            echo "❌ Failed to create invoice for withdrawal: $WITHDRAW_INVOICE"
-          fi
-        else
-          echo "❌ No withdraw LNURL found for LNBITS1"
-        fi
-        
-        echo -e "\n✅ LNURL functionality testing complete!"
 
     - name: Test transactions between LNbits instances
       if: success()
