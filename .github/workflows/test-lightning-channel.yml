@@ -1010,6 +1010,7 @@ jobs:
           ADMIN_KEY=$(echo "$USER_INFO" | jq -r '.wallets[0].adminkey')
           INVOICE_KEY=$(echo "$USER_INFO" | jq -r '.wallets[0].inkey')
           WALLET_ID=$(echo "$USER_INFO" | jq -r '.wallets[0].id')
+          USER_ID=$(echo "$USER_INFO" | jq -r '.id')
           echo "✅ Admin key for $NAME: ${ADMIN_KEY:0:20}..."
           
           # Install lnurlp extension via HTTPS
@@ -1043,11 +1044,17 @@ jobs:
           
           curl -k -s -X PUT "https://localhost:$PROXY_PORT/api/v1/extension/lnurlFlip/activate" -H "Authorization: Bearer $ACCESS_TOKEN" > /dev/null
           curl -k -s -X PUT "https://localhost:$PROXY_PORT/api/v1/extension/lnurlFlip/enable" -H "Authorization: Bearer $ACCESS_TOKEN" > /dev/null
+          
+          # Enable lnurlFlip for the user if USER_ID is available
+          if [ -n "$USER_ID" ]; then
+            curl -k -s -X PUT "https://localhost:$PROXY_PORT/api/v1/users/$USER_ID/extensions?enable=lnurlFlip" \
+              -H "Authorization: Bearer $ACCESS_TOKEN" > /dev/null
+          fi
           echo "✅ lnurlFlip installed on $NAME"
           
           # Create test links to prepare for later testing
           echo "Creating test links for later testing..."
-          sleep 3  # Give extensions time to initialize
+          sleep 5  # Give extensions more time to initialize
           
           # Create LNURL-P pay link for testing
           echo "Creating LNURL-P pay link..."
