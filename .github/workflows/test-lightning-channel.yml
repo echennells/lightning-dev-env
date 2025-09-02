@@ -1040,7 +1040,7 @@ jobs:
           INSTALL_RESP=$(curl -k -s -X POST https://localhost:$PROXY_PORT/api/v1/extension \
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer $ACCESS_TOKEN" \
-            -d '{"ext_id": "lnurlFlip", "archive": "https://github.com/echennells/lnurlFlip/archive/refs/heads/main.zip", "source_repo": "https://raw.githubusercontent.com/echennells/lnurlFlip/main/manifest.json", "version": "0.1.1"}')
+            -d '{"ext_id": "lnurlFlip", "archive": "https://github.com/echennells/lnurlFlip/archive/refs/tags/v0.1.1.zip", "source_repo": "https://raw.githubusercontent.com/echennells/lnurlFlip/main/manifest.json", "version": "0.1.1"}')
           echo "Debug: lnurlFlip install response: $INSTALL_RESP"
           
           ACTIVATE_RESP=$(curl -k -s -X PUT "https://localhost:$PROXY_PORT/api/v1/extension/lnurlFlip/activate" -H "Authorization: Bearer $ACCESS_TOKEN")
