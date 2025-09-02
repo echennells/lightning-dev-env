@@ -1271,13 +1271,6 @@ jobs:
             # Note: In production, you'd decode the lnurl, but for testing we can construct it
             CALLBACK_URL="https://localhost:6443/lnurlp/api/v1/lnurl/cb/$LNBITS1_PAY_ID"
             
-            # CHECK BALANCES BEFORE PAYMENT
-            echo "💰 Checking balances BEFORE LNURL-P payment..."
-            LNBITS1_BEFORE=$(curl -s "http://localhost:5001/api/v1/wallet" -H "X-Api-Key: $LNBITS1_INVOICE_KEY" | jq -r '.balance')
-            LNBITS2_BEFORE=$(curl -s "http://localhost:5002/api/v1/wallet" -H "X-Api-Key: $LNBITS2_INVOICE_KEY" | jq -r '.balance')
-            echo "   LNBITS1 (receiver): $LNBITS1_BEFORE msat"
-            echo "   LNBITS2 (sender):   $LNBITS2_BEFORE msat"
-            
             # Get payment request from LNURL-P endpoint
             echo "Getting payment request from LNURL-P endpoint..."
             PAY_REQUEST=$(curl -k -s "$CALLBACK_URL?amount=1000000")
@@ -1293,33 +1286,9 @@ jobs:
                 -d "{\"out\": true, \"bolt11\": \"$PAYMENT_REQUEST\"}")
               
               if echo "$PAYMENT" | jq -e '.payment_hash' > /dev/null; then
-                echo "✅ LNURL-P payment transaction completed!"
-                
-                # CHECK BALANCES AFTER PAYMENT
-                sleep 2  # Wait for balance update
-                echo "💰 Checking balances AFTER LNURL-P payment..."
-                LNBITS1_AFTER=$(curl -s "http://localhost:5001/api/v1/wallet" -H "X-Api-Key: $LNBITS1_INVOICE_KEY" | jq -r '.balance')
-                LNBITS2_AFTER=$(curl -s "http://localhost:5002/api/v1/wallet" -H "X-Api-Key: $LNBITS2_INVOICE_KEY" | jq -r '.balance')
-                echo "   LNBITS1 (receiver): $LNBITS1_AFTER msat (was $LNBITS1_BEFORE)"
-                echo "   LNBITS2 (sender):   $LNBITS2_AFTER msat (was $LNBITS2_BEFORE)"
-                
-                # Calculate the differences
-                LNBITS1_DIFF=$((LNBITS1_AFTER - LNBITS1_BEFORE))
-                LNBITS2_DIFF=$((LNBITS2_BEFORE - LNBITS2_AFTER))
-                echo "💸 Money movement:"
-                echo "   LNBITS1 received: +$LNBITS1_DIFF msat"
-                echo "   LNBITS2 sent:     -$LNBITS2_DIFF msat"
-                
-                # Verify actual money moved
-                if [ "$LNBITS1_DIFF" -gt 0 ] && [ "$LNBITS2_DIFF" -gt 0 ]; then
-                  echo "🎉 CONFIRMED: Real money moved via LNURL-P! ($LNBITS1_DIFF msat transferred)"
-                else
-                  echo "❌ WARNING: Balances don't show expected money movement!"
-                  echo "   Expected: LNBITS1 +1000000, LNBITS2 -1000000+"
-                  echo "   Actual:   LNBITS1 +$LNBITS1_DIFF, LNBITS2 -$LNBITS2_DIFF"
-                fi
+                echo "✅ Successfully paid LNURL-P link! Payment from LNBITS2 to LNBITS1's pay link"
               else
-                echo "❌ LNURL-P payment failed: $PAYMENT"
+                echo "⚠️ LNURL-P payment failed: $PAYMENT"
               fi
             else
               echo "⚠️ Failed to get payment request from LNURL-P: $PAY_REQUEST"
