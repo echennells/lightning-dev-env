@@ -1457,39 +1457,77 @@ jobs:
             
             # Test actual withdraw callback payment
             echo ""
-            echo "🚀 Testing withdraw callback payment..."
+            echo "🚀 Testing REAL withdraw callback payment..."
+            
+            # Check balances BEFORE withdraw
+            echo "💰 Checking balances BEFORE withdraw..."
+            LNBITS1_BEFORE=$(curl -s "http://localhost:5001/api/v1/wallet" -H "X-Api-Key: $LNBITS1_INVOICE_KEY" | jq -r '.balance')
+            LNBITS2_BEFORE=$(curl -s "http://localhost:5002/api/v1/wallet" -H "X-Api-Key: $LNBITS2_INVOICE_KEY" | jq -r '.balance')
+            echo "   LNBITS1 (withdraw from): $LNBITS1_BEFORE msat"
+            echo "   LNBITS2 (receive to):    $LNBITS2_BEFORE msat"
             
             # Create invoice on LNBITS2 to receive the withdrawal
+            echo "Creating invoice on LNBITS2 to receive withdrawal..."
             WITHDRAW_INVOICE=$(curl -s -X POST "http://localhost:5002/api/v1/payments" \
               -H "X-Api-Key: $LNBITS2_INVOICE_KEY" \
               -H "Content-Type: application/json" \
-              -d '{"out": false, "amount": 1000, "memo": "HAR test withdraw"}')
+              -d '{"out": false, "amount": 1000, "memo": "REAL withdraw test"}')
             
-            if PAYMENT_REQUEST=$(echo "$WITHDRAW_INVOICE" | jq -r '.payment_request' 2>/dev/null) && [ "$PAYMENT_REQUEST" != "null" ] && [ -n "$PAYMENT_REQUEST" ]; then
-              echo "✅ Created withdraw invoice on LNBITS2"
+            echo "Invoice response: $WITHDRAW_INVOICE"
+            
+            # FIX: LNbits uses .bolt11 not .payment_request
+            if PAYMENT_REQUEST=$(echo "$WITHDRAW_INVOICE" | jq -r '.bolt11' 2>/dev/null) && [ "$PAYMENT_REQUEST" != "null" ] && [ -n "$PAYMENT_REQUEST" ]; then
+              echo "✅ Created withdraw invoice: ${PAYMENT_REQUEST:0:50}..."
               
               # Fix callback URL domain  
-              FIXED_CALLBACK_URL=$(echo "$CALLBACK_URL" | sed 's|lnbits.example.com|localhost:6443|g')
+              FIXED_CALLBACK_URL=$(echo "$CALLBACK_URL" | sed 's|lnbits1.example.com|localhost:6443|g')
+              echo "Fixed callback URL: $FIXED_CALLBACK_URL"
               
-              # Execute withdraw callback
-              echo "Calling withdraw callback..."
+              # Execute withdraw callback with real Lightning invoice
+              echo "🚀 Calling withdraw callback with real Lightning invoice..."
               CALLBACK_RESULT=$(curl -k -s "$FIXED_CALLBACK_URL&k1=$K1&pr=$PAYMENT_REQUEST")
               echo "Callback result: $CALLBACK_RESULT"
               
               if echo "$CALLBACK_RESULT" | jq -e '.status' > /dev/null; then
                 STATUS=$(echo "$CALLBACK_RESULT" | jq -r '.status')
                 if [ "$STATUS" = "OK" ]; then
-                  echo "🎉 WITHDRAW CALLBACK PAYMENT SUCCESS!"
-                  echo "💰 Money moved from LNBITS1 to LNBITS2 via withdraw link!"
+                  echo "🎉 WITHDRAW CALLBACK SUCCESS!"
+                  
+                  # Check balances AFTER withdraw
+                  sleep 3  # Wait for Lightning payment to settle
+                  echo "💰 Checking balances AFTER withdraw..."
+                  LNBITS1_AFTER=$(curl -s "http://localhost:5001/api/v1/wallet" -H "X-Api-Key: $LNBITS1_INVOICE_KEY" | jq -r '.balance')
+                  LNBITS2_AFTER=$(curl -s "http://localhost:5002/api/v1/wallet" -H "X-Api-Key: $LNBITS2_INVOICE_KEY" | jq -r '.balance')
+                  echo "   LNBITS1 (withdraw from): $LNBITS1_AFTER msat (was $LNBITS1_BEFORE)"
+                  echo "   LNBITS2 (receive to):    $LNBITS2_AFTER msat (was $LNBITS2_BEFORE)"
+                  
+                  # Calculate money movement
+                  LNBITS1_DIFF=$((LNBITS1_BEFORE - LNBITS1_AFTER))
+                  LNBITS2_DIFF=$((LNBITS2_AFTER - LNBITS2_BEFORE))
+                  echo "💸 Money movement:"
+                  echo "   LNBITS1 paid out:  -$LNBITS1_DIFF msat"
+                  echo "   LNBITS2 received:  +$LNBITS2_DIFF msat"
+                  
+                  # Verify actual withdraw worked
+                  if [ "$LNBITS1_DIFF" -gt 0 ] && [ "$LNBITS2_DIFF" -gt 0 ]; then
+                    echo "🎉 CONFIRMED: REAL WITHDRAW WORKED! ($LNBITS2_DIFF msat withdrawn)"
+                    echo "💰 Money actually moved from withdraw link to receiving wallet!"
+                  else
+                    echo "❌ WARNING: Balances don't show expected withdraw!"
+                    echo "   Expected: LNBITS1 decreased, LNBITS2 increased by ~1000 msat"
+                    echo "   Actual:   LNBITS1 -$LNBITS1_DIFF, LNBITS2 +$LNBITS2_DIFF"
+                  fi
                 else
-                  echo "❌ Callback failed: $STATUS"
+                  echo "❌ Withdraw callback failed: $STATUS"
                   echo "   Reason: $(echo "$CALLBACK_RESULT" | jq -r '.reason // "Unknown"')"
                 fi
               else
-                echo "❌ Invalid callback response"
+                echo "❌ Invalid callback response: $CALLBACK_RESULT"
               fi
             else
-              echo "❌ Failed to create withdraw invoice"
+              echo "❌ Failed to create withdraw invoice!"
+              echo "   Response: $WITHDRAW_INVOICE"
+              echo "   Trying to extract bolt11 field..."
             fi
             
           else
