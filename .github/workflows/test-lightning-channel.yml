@@ -1412,6 +1412,10 @@ jobs:
           echo "   ID: $WITHDRAW_ID"
           echo "   unique_hash: $WITHDRAW_HASH"
           
+          # Wait for withdraw link open_time (it has wait_time: 1 second)
+          echo "⏰ Waiting 2 seconds for withdraw link open_time..."
+          sleep 2
+          
           # Calculate id_unique_hash using the discovered formula
           echo ""
           echo "🔑 Calculating id_unique_hash (the key fix)..."
