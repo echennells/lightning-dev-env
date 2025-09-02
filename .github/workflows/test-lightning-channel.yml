@@ -1275,35 +1275,65 @@ jobs:
             # Construct callback URL for testing
             CALLBACK_URL="https://localhost:6443/lnurlp/api/v1/lnurl/cb/$LNBITS1_PAY_ID"
             
-            # CHECK BALANCES BEFORE PAYMENT
-            echo "💰 Checking balances BEFORE LNURL-P payment..."
-            LNBITS1_BEFORE=$(curl -s "http://localhost:5001/api/v1/wallet" -H "X-Api-Key: $LNBITS1_INVOICE_KEY" | jq -r '.balance')
-            LNBITS2_BEFORE=$(curl -s "http://localhost:5002/api/v1/wallet" -H "X-Api-Key: $LNBITS2_INVOICE_KEY" | jq -r '.balance')
+            # CHECK BALANCES BEFORE PAYMENT - SHOW RAW API RESPONSES
+            echo "💰 STEP 1: Getting wallet balances BEFORE LNURL-P payment..."
+            echo "🔍 RAW API CALL: curl -s http://localhost:5001/api/v1/wallet -H 'X-Api-Key: $LNBITS1_INVOICE_KEY'"
+            LNBITS1_BEFORE_RAW=$(curl -s "http://localhost:5001/api/v1/wallet" -H "X-Api-Key: $LNBITS1_INVOICE_KEY")
+            echo "📄 LNBITS1 RAW RESPONSE: $LNBITS1_BEFORE_RAW"
+            LNBITS1_BEFORE=$(echo "$LNBITS1_BEFORE_RAW" | jq -r '.balance')
+            
+            echo "🔍 RAW API CALL: curl -s http://localhost:5002/api/v1/wallet -H 'X-Api-Key: $LNBITS2_INVOICE_KEY'"
+            LNBITS2_BEFORE_RAW=$(curl -s "http://localhost:5002/api/v1/wallet" -H "X-Api-Key: $LNBITS2_INVOICE_KEY")
+            echo "📄 LNBITS2 RAW RESPONSE: $LNBITS2_BEFORE_RAW"
+            LNBITS2_BEFORE=$(echo "$LNBITS2_BEFORE_RAW" | jq -r '.balance')
+            
+            echo "💰 PARSED BALANCES BEFORE:"
             echo "   LNBITS1 (receiver): $LNBITS1_BEFORE msat"
             echo "   LNBITS2 (sender):   $LNBITS2_BEFORE msat"
             
-            # Get payment request from LNURL-P endpoint
-            echo "Getting payment request from LNURL-P endpoint..."
+            # Get payment request from LNURL-P endpoint - SHOW EVERYTHING
+            echo ""
+            echo "💳 STEP 2: Getting payment request from LNURL-P endpoint..."
+            echo "🔍 RAW API CALL: curl -k -s '$CALLBACK_URL?amount=1000000'"
             PAY_REQUEST=$(curl -k -s "$CALLBACK_URL?amount=1000000")
+            echo "📄 LNURL-P RAW RESPONSE: $PAY_REQUEST"
             
             if echo "$PAY_REQUEST" | jq -e '.pr' > /dev/null; then
               PAYMENT_REQUEST=$(echo "$PAY_REQUEST" | jq -r '.pr')
-              echo "Got payment request, paying from LNBITS2..."
+              echo "✅ EXTRACTED BOLT11 INVOICE: $PAYMENT_REQUEST"
+              echo ""
+              echo "⚡ STEP 3: Paying LNURL-P invoice from LNBITS2..."
+              echo "🔍 RAW API CALL: curl -s -X POST http://localhost:5002/api/v1/payments \\"
+              echo "  -H 'X-API-KEY: $LNBITS2_ADMIN_KEY' \\"
+              echo "  -H 'Content-Type: application/json' \\"
+              echo "  -d '{\"out\": true, \"bolt11\": \"$PAYMENT_REQUEST\"}'"
               
               # Pay the LNURL-P invoice from LNBITS2
               PAYMENT=$(curl -s -X POST "http://localhost:5002/api/v1/payments" \
                 -H "X-API-KEY: $LNBITS2_ADMIN_KEY" \
                 -H "Content-Type: application/json" \
                 -d "{\"out\": true, \"bolt11\": \"$PAYMENT_REQUEST\"}")
+              echo "📄 PAYMENT RAW RESPONSE: $PAYMENT"
               
               if echo "$PAYMENT" | jq -e '.payment_hash' > /dev/null; then
-                echo "✅ LNURL-P payment transaction completed!"
+                PAYMENT_HASH=$(echo "$PAYMENT" | jq -r '.payment_hash')
+                echo "✅ PAYMENT SUBMITTED! Hash: $PAYMENT_HASH"
                 
-                # CHECK BALANCES AFTER PAYMENT
+                # CHECK BALANCES AFTER PAYMENT - SHOW RAW RESPONSES
                 sleep 2  # Wait for balance update
-                echo "💰 Checking balances AFTER LNURL-P payment..."
-                LNBITS1_AFTER=$(curl -s "http://localhost:5001/api/v1/wallet" -H "X-Api-Key: $LNBITS1_INVOICE_KEY" | jq -r '.balance')
-                LNBITS2_AFTER=$(curl -s "http://localhost:5002/api/v1/wallet" -H "X-Api-Key: $LNBITS2_INVOICE_KEY" | jq -r '.balance')
+                echo ""
+                echo "💰 STEP 4: Getting wallet balances AFTER LNURL-P payment..."
+                echo "🔍 RAW API CALL: curl -s http://localhost:5001/api/v1/wallet -H 'X-Api-Key: $LNBITS1_INVOICE_KEY'"
+                LNBITS1_AFTER_RAW=$(curl -s "http://localhost:5001/api/v1/wallet" -H "X-Api-Key: $LNBITS1_INVOICE_KEY")
+                echo "📄 LNBITS1 RAW RESPONSE AFTER: $LNBITS1_AFTER_RAW"
+                LNBITS1_AFTER=$(echo "$LNBITS1_AFTER_RAW" | jq -r '.balance')
+                
+                echo "🔍 RAW API CALL: curl -s http://localhost:5002/api/v1/wallet -H 'X-Api-Key: $LNBITS2_INVOICE_KEY'"
+                LNBITS2_AFTER_RAW=$(curl -s "http://localhost:5002/api/v1/wallet" -H "X-Api-Key: $LNBITS2_INVOICE_KEY")
+                echo "📄 LNBITS2 RAW RESPONSE AFTER: $LNBITS2_AFTER_RAW"
+                LNBITS2_AFTER=$(echo "$LNBITS2_AFTER_RAW" | jq -r '.balance')
+                
+                echo "💰 PARSED BALANCES AFTER:"
                 echo "   LNBITS1 (receiver): $LNBITS1_AFTER msat (was $LNBITS1_BEFORE)"
                 echo "   LNBITS2 (sender):   $LNBITS2_AFTER msat (was $LNBITS2_BEFORE)"
                 
@@ -1385,13 +1415,14 @@ jobs:
           
           echo "✅ id_unique_hash for use 0: $FIRST_ID_UNIQUE_HASH"
           
-          # Test the withdraw callback with correct format
-          echo "✅ Testing withdraw with correct id_unique_hash format..."
+          # Test the withdraw callback with correct format - SHOW EVERYTHING
+          echo ""
+          echo "🔗 STEP 5: Testing withdraw LNURL with correct id_unique_hash format..."
           CORRECT_URL="https://localhost:6443/withdraw/api/v1/lnurl/$WITHDRAW_HASH/$FIRST_ID_UNIQUE_HASH"
-          echo "URL: $CORRECT_URL"
+          echo "🔍 RAW API CALL: curl -k -s '$CORRECT_URL'"
           
           CORRECT_RESPONSE=$(curl -k -s "$CORRECT_URL")
-          echo "Response: $CORRECT_RESPONSE"
+          echo "📄 WITHDRAW LNURL RAW RESPONSE: $CORRECT_RESPONSE"
           
           if echo "$CORRECT_RESPONSE" | jq -e '.k1' > /dev/null; then
             echo "🎉 SUCCESS! Correct format works!"
@@ -1404,45 +1435,74 @@ jobs:
             echo ""
             echo "🚀 Testing REAL withdraw callback payment..."
             
-            # Check balances BEFORE withdraw
-            echo "💰 Checking balances BEFORE withdraw..."
-            LNBITS1_BEFORE=$(curl -s "http://localhost:5001/api/v1/wallet" -H "X-Api-Key: $LNBITS1_INVOICE_KEY" | jq -r '.balance')
-            LNBITS2_BEFORE=$(curl -s "http://localhost:5002/api/v1/wallet" -H "X-Api-Key: $LNBITS2_INVOICE_KEY" | jq -r '.balance')
+            # Check balances BEFORE withdraw - SHOW RAW RESPONSES
+            echo ""
+            echo "💰 STEP 6: Getting wallet balances BEFORE withdraw..."
+            echo "🔍 RAW API CALL: curl -s http://localhost:5001/api/v1/wallet -H 'X-Api-Key: $LNBITS1_INVOICE_KEY'"
+            LNBITS1_BEFORE_RAW=$(curl -s "http://localhost:5001/api/v1/wallet" -H "X-Api-Key: $LNBITS1_INVOICE_KEY")
+            echo "📄 LNBITS1 RAW RESPONSE BEFORE WITHDRAW: $LNBITS1_BEFORE_RAW"
+            LNBITS1_BEFORE=$(echo "$LNBITS1_BEFORE_RAW" | jq -r '.balance')
+            
+            echo "🔍 RAW API CALL: curl -s http://localhost:5002/api/v1/wallet -H 'X-Api-Key: $LNBITS2_INVOICE_KEY'"
+            LNBITS2_BEFORE_RAW=$(curl -s "http://localhost:5002/api/v1/wallet" -H "X-Api-Key: $LNBITS2_INVOICE_KEY")
+            echo "📄 LNBITS2 RAW RESPONSE BEFORE WITHDRAW: $LNBITS2_BEFORE_RAW"
+            LNBITS2_BEFORE=$(echo "$LNBITS2_BEFORE_RAW" | jq -r '.balance')
+            
+            echo "💰 PARSED BALANCES BEFORE WITHDRAW:"
             echo "   LNBITS1 (withdraw from): $LNBITS1_BEFORE msat"
             echo "   LNBITS2 (receive to):    $LNBITS2_BEFORE msat"
             
-            # Create invoice on LNBITS2 to receive the withdrawal
-            echo "Creating invoice on LNBITS2 to receive withdrawal..."
+            # Create invoice on LNBITS2 to receive the withdrawal - SHOW EVERYTHING
+            echo ""
+            echo "📄 STEP 7: Creating invoice on LNBITS2 to receive withdrawal..."
+            echo "🔍 RAW API CALL: curl -s -X POST http://localhost:5002/api/v1/payments \\"
+            echo "  -H 'X-Api-Key: $LNBITS2_INVOICE_KEY' \\"
+            echo "  -H 'Content-Type: application/json' \\"
+            echo "  -d '{\"out\": false, \"amount\": 1000, \"memo\": \"REAL withdraw test\"}'"
+            
             WITHDRAW_INVOICE=$(curl -s -X POST "http://localhost:5002/api/v1/payments" \
               -H "X-Api-Key: $LNBITS2_INVOICE_KEY" \
               -H "Content-Type: application/json" \
               -d '{"out": false, "amount": 1000, "memo": "REAL withdraw test"}')
             
-            echo "Invoice response: $WITHDRAW_INVOICE"
+            echo "📄 WITHDRAW INVOICE RAW RESPONSE: $WITHDRAW_INVOICE"
             
-            # FIX: LNbits uses .bolt11 not .payment_request
+            # Extract bolt11 invoice - SHOW EVERYTHING
             if PAYMENT_REQUEST=$(echo "$WITHDRAW_INVOICE" | jq -r '.bolt11' 2>/dev/null) && [ "$PAYMENT_REQUEST" != "null" ] && [ -n "$PAYMENT_REQUEST" ]; then
-              echo "✅ Created withdraw invoice: ${PAYMENT_REQUEST:0:50}..."
+              echo "✅ EXTRACTED BOLT11 INVOICE: $PAYMENT_REQUEST"
               
-              # Fix callback URL domain  
+              # Fix callback URL domain and show the exact call
               FIXED_CALLBACK_URL=$(echo "$CALLBACK_URL" | sed 's|lnbits1.example.com|localhost:6443|g')
-              echo "Fixed callback URL: $FIXED_CALLBACK_URL"
+              echo "🔧 FIXED CALLBACK URL: $FIXED_CALLBACK_URL"
               
-              # Execute withdraw callback with real Lightning invoice
-              echo "🚀 Calling withdraw callback with real Lightning invoice..."
+              # Execute withdraw callback with real Lightning invoice - SHOW EXACT CALL
+              echo ""
+              echo "⚡ STEP 8: Executing withdraw callback with Lightning invoice..."
+              echo "🔍 RAW API CALL: curl -k -s '$FIXED_CALLBACK_URL&k1=$K1&pr=$PAYMENT_REQUEST'"
+              
               CALLBACK_RESULT=$(curl -k -s "$FIXED_CALLBACK_URL&k1=$K1&pr=$PAYMENT_REQUEST")
-              echo "Callback result: $CALLBACK_RESULT"
+              echo "📄 WITHDRAW CALLBACK RAW RESPONSE: $CALLBACK_RESULT"
               
               if echo "$CALLBACK_RESULT" | jq -e '.status' > /dev/null; then
                 STATUS=$(echo "$CALLBACK_RESULT" | jq -r '.status')
                 if [ "$STATUS" = "OK" ]; then
                   echo "🎉 WITHDRAW CALLBACK SUCCESS!"
                   
-                  # Check balances AFTER withdraw
+                  # Check balances AFTER withdraw - SHOW RAW RESPONSES
                   sleep 3  # Wait for Lightning payment to settle
-                  echo "💰 Checking balances AFTER withdraw..."
-                  LNBITS1_AFTER=$(curl -s "http://localhost:5001/api/v1/wallet" -H "X-Api-Key: $LNBITS1_INVOICE_KEY" | jq -r '.balance')
-                  LNBITS2_AFTER=$(curl -s "http://localhost:5002/api/v1/wallet" -H "X-Api-Key: $LNBITS2_INVOICE_KEY" | jq -r '.balance')
+                  echo ""
+                  echo "💰 STEP 9: Getting wallet balances AFTER withdraw..."
+                  echo "🔍 RAW API CALL: curl -s http://localhost:5001/api/v1/wallet -H 'X-Api-Key: $LNBITS1_INVOICE_KEY'"
+                  LNBITS1_AFTER_RAW=$(curl -s "http://localhost:5001/api/v1/wallet" -H "X-Api-Key: $LNBITS1_INVOICE_KEY")
+                  echo "📄 LNBITS1 RAW RESPONSE AFTER WITHDRAW: $LNBITS1_AFTER_RAW"
+                  LNBITS1_AFTER=$(echo "$LNBITS1_AFTER_RAW" | jq -r '.balance')
+                  
+                  echo "🔍 RAW API CALL: curl -s http://localhost:5002/api/v1/wallet -H 'X-Api-Key: $LNBITS2_INVOICE_KEY'"
+                  LNBITS2_AFTER_RAW=$(curl -s "http://localhost:5002/api/v1/wallet" -H "X-Api-Key: $LNBITS2_INVOICE_KEY")
+                  echo "📄 LNBITS2 RAW RESPONSE AFTER WITHDRAW: $LNBITS2_AFTER_RAW"
+                  LNBITS2_AFTER=$(echo "$LNBITS2_AFTER_RAW" | jq -r '.balance')
+                  
+                  echo "💰 PARSED BALANCES AFTER WITHDRAW:"
                   echo "   LNBITS1 (withdraw from): $LNBITS1_AFTER msat (was $LNBITS1_BEFORE)"
                   echo "   LNBITS2 (receive to):    $LNBITS2_AFTER msat (was $LNBITS2_BEFORE)"
                   
