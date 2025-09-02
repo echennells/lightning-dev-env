@@ -1070,9 +1070,9 @@ jobs:
               "is_unique": true,
               "use_custom": false,
               "title": "vouchers",
-              "min_withdrawable": 1000,
+              "min_withdrawable": 2000,
               "wait_time": 1,
-              "max_withdrawable": 1000,
+              "max_withdrawable": 2000,
               "uses": 10,
               "custom_url": null
             }')
@@ -1294,8 +1294,8 @@ jobs:
             # Get payment request from LNURL-P endpoint - SHOW EVERYTHING
             echo ""
             echo "💳 STEP 2: Getting payment request from LNURL-P endpoint..."
-            echo "🔍 RAW API CALL: curl -k -s '$CALLBACK_URL?amount=1000000'"
-            PAY_REQUEST=$(curl -k -s "$CALLBACK_URL?amount=1000000")
+            echo "🔍 RAW API CALL: curl -k -s '$CALLBACK_URL?amount=2000000'"
+            PAY_REQUEST=$(curl -k -s "$CALLBACK_URL?amount=2000000")
             echo "📄 LNURL-P RAW RESPONSE: $PAY_REQUEST"
             
             if echo "$PAY_REQUEST" | jq -e '.pr' > /dev/null; then
@@ -1385,9 +1385,9 @@ jobs:
             "is_unique": true,
             "use_custom": false,
             "title": "HAR test voucher",
-            "min_withdrawable": 1000,
+            "min_withdrawable": 2000,
             "wait_time": 1,
-            "max_withdrawable": 1000,
+            "max_withdrawable": 2000,
             "uses": 10,
             "custom_url": null
           }')
@@ -1458,12 +1458,12 @@ jobs:
             echo "🔍 RAW API CALL: curl -s -X POST http://localhost:5002/api/v1/payments \\"
             echo "  -H 'X-Api-Key: $LNBITS2_INVOICE_KEY' \\"
             echo "  -H 'Content-Type: application/json' \\"
-            echo "  -d '{\"out\": false, \"amount\": 1000, \"memo\": \"REAL withdraw test\"}'"
+            echo "  -d '{\"out\": false, \"amount\": 2000, \"memo\": \"REAL withdraw test\"}'"
             
             WITHDRAW_INVOICE=$(curl -s -X POST "http://localhost:5002/api/v1/payments" \
               -H "X-Api-Key: $LNBITS2_INVOICE_KEY" \
               -H "Content-Type: application/json" \
-              -d '{"out": false, "amount": 1000, "memo": "REAL withdraw test"}')
+              -d '{"out": false, "amount": 2000, "memo": "REAL withdraw test"}')
             
             echo "📄 WITHDRAW INVOICE RAW RESPONSE: $WITHDRAW_INVOICE"
             
