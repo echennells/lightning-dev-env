@@ -1044,12 +1044,6 @@ jobs:
           
           curl -k -s -X PUT "https://localhost:$PROXY_PORT/api/v1/extension/lnurlFlip/activate" -H "Authorization: Bearer $ACCESS_TOKEN" > /dev/null
           curl -k -s -X PUT "https://localhost:$PROXY_PORT/api/v1/extension/lnurlFlip/enable" -H "Authorization: Bearer $ACCESS_TOKEN" > /dev/null
-          
-          # Enable lnurlFlip for the user if USER_ID is available
-          if [ -n "$USER_ID" ]; then
-            curl -k -s -X PUT "https://localhost:$PROXY_PORT/api/v1/users/$USER_ID/extensions?enable=lnurlFlip" \
-              -H "Authorization: Bearer $ACCESS_TOKEN" > /dev/null
-          fi
           echo "✅ lnurlFlip installed on $NAME"
           
           # Create test links to prepare for later testing
