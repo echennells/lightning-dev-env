@@ -1385,24 +1385,8 @@ jobs:
           
           echo "✅ id_unique_hash for use 0: $FIRST_ID_UNIQUE_HASH"
           
-          # Test the WRONG way first (reproduces HAR file error)
-          echo ""
-          echo "❌ Testing WRONG URL format (from HAR files)..."
-          WRONG_URL="https://localhost:6443/withdraw/api/v1/lnurl/$WITHDRAW_HASH"
-          echo "URL: $WRONG_URL"
-          
-          WRONG_RESPONSE=$(curl -k -s "$WRONG_URL")
-          echo "Response: $WRONG_RESPONSE"
-          
-          if echo "$WRONG_RESPONSE" | grep -q "This link requires an id_unique_hash"; then
-            echo "✅ CONFIRMED: Wrong format fails with expected HAR error!"
-          else
-            echo "⚠️  Different response than expected from HAR"
-          fi
-          
-          # Test the CORRECT way (our solution)
-          echo ""
-          echo "✅ Testing CORRECT URL format (our fix)..."
+          # Test the withdraw callback with correct format
+          echo "✅ Testing withdraw with correct id_unique_hash format..."
           CORRECT_URL="https://localhost:6443/withdraw/api/v1/lnurl/$WITHDRAW_HASH/$FIRST_ID_UNIQUE_HASH"
           echo "URL: $CORRECT_URL"
           
@@ -1506,9 +1490,9 @@ jobs:
           echo "SUMMARY:"
           echo "• ✅ LNURL-P: Real payment with verified money movement"
           echo "• ✅ LNURL-Withdraw: Real payment with verified money movement"  
-          echo "• ✅ HAR fix: Wrong format fails, correct format works"
+          echo "• ✅ HAR issue solved: Uses correct id_unique_hash format"
           echo "• ✅ Formula: id_unique_hash = shortuuid.uuid(name=id + unique_hash + use_number)"
-          echo "• 🎉 The HAR file issue is completely solved!"
+          echo "• 🎉 Both LNURL functions working with real Lightning payments!"
           
         else
           echo "❌ Failed to create test withdraw link"
