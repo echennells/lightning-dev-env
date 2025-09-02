@@ -1037,18 +1037,27 @@ jobs:
           
           # Install lnurlFlip extension via HTTPS
           echo "Installing lnurlFlip extension on $NAME..."
-          curl -k -s -X POST https://localhost:$PROXY_PORT/api/v1/extension \
+          INSTALL_RESP=$(curl -k -s -X POST https://localhost:$PROXY_PORT/api/v1/extension \
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer $ACCESS_TOKEN" \
-            -d '{"ext_id": "lnurlFlip", "archive": "https://github.com/echennells/lnurlFlip/archive/refs/heads/main.zip"}' > /dev/null
+            -d '{"ext_id": "lnurlFlip", "archive": "https://github.com/echennells/lnurlFlip/archive/refs/heads/main.zip"}')
+          echo "Debug: lnurlFlip install response: $INSTALL_RESP"
           
-          curl -k -s -X PUT "https://localhost:$PROXY_PORT/api/v1/extension/lnurlFlip/activate" -H "Authorization: Bearer $ACCESS_TOKEN" > /dev/null
-          curl -k -s -X PUT "https://localhost:$PROXY_PORT/api/v1/extension/lnurlFlip/enable" -H "Authorization: Bearer $ACCESS_TOKEN" > /dev/null
+          ACTIVATE_RESP=$(curl -k -s -X PUT "https://localhost:$PROXY_PORT/api/v1/extension/lnurlFlip/activate" -H "Authorization: Bearer $ACCESS_TOKEN")
+          echo "Debug: lnurlFlip activate response: $ACTIVATE_RESP"
+          
+          ENABLE_RESP=$(curl -k -s -X PUT "https://localhost:$PROXY_PORT/api/v1/extension/lnurlFlip/enable" -H "Authorization: Bearer $ACCESS_TOKEN")
+          echo "Debug: lnurlFlip enable response: $ENABLE_RESP"
+          
+          # Check extension status
+          EXT_STATUS=$(curl -k -s "https://localhost:$PROXY_PORT/api/v1/extensions" -H "Authorization: Bearer $ACCESS_TOKEN")
+          echo "Debug: Extension status after lnurlFlip install: $EXT_STATUS"
+          
           echo "✅ lnurlFlip installed on $NAME"
           
           # Create test links to prepare for later testing
           echo "Creating test links for later testing..."
-          sleep 5  # Give extensions more time to initialize
+          sleep 10  # Give extensions even more time to initialize, especially lnurlFlip
           
           # Create LNURL-P pay link for testing
           echo "Creating LNURL-P pay link..."
@@ -1106,6 +1115,16 @@ jobs:
           if [ -n "$PAY_ID" ] && [ -n "$WITHDRAW_ID" ]; then
             echo "Creating lnurlFlip link..."
             echo "Debug: Creating flip with PAY_ID=$PAY_ID, WITHDRAW_ID=$WITHDRAW_ID, WALLET_ID=$WALLET_ID"
+            
+            # Check extension status right before flip creation
+            echo "Debug: Checking extension status before flip creation..."
+            FLIP_EXT_STATUS=$(curl -k -s "https://localhost:$PROXY_PORT/api/v1/extensions" -H "Authorization: Bearer $ACCESS_TOKEN")
+            echo "Debug: Extension status before flip creation: $FLIP_EXT_STATUS"
+            
+            # Wait a bit more for lnurlFlip specifically
+            echo "Debug: Waiting additional 5 seconds for lnurlFlip to be ready..."
+            sleep 5
+            
             FLIP_LINK=$(curl -k -s -X POST "https://localhost:$PROXY_PORT/lnurlFlip/api/v1/lnurlflip" \
               -H "X-API-KEY: $ADMIN_KEY" \
               -H "Content-Type: application/json" \
