@@ -1384,10 +1384,7 @@ jobs:
           # Calculate id_unique_hash using the discovered formula
           echo ""
           echo "🔑 Calculating id_unique_hash (the key fix)..."
-          FIRST_ID_UNIQUE_HASH=$(docker compose exec -T lnbits-1 python3 -c "
-import shortuuid
-print(shortuuid.uuid(name='$WITHDRAW_ID' + '$WITHDRAW_HASH' + '0'))
-" 2>/dev/null || echo "")
+          FIRST_ID_UNIQUE_HASH=$(docker compose exec -T lnbits-1 python3 -c "import shortuuid; print(shortuuid.uuid(name='$WITHDRAW_ID' + '$WITHDRAW_HASH' + '0'))" 2>/dev/null || echo "")
           
           if [ -z "$FIRST_ID_UNIQUE_HASH" ]; then
             echo "Fallback calculation..."
