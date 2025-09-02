@@ -987,9 +987,9 @@ jobs:
             sleep 2
           done
           
-          # Complete first install
-          echo "Completing first install for $NAME..."
-          FIRST_INSTALL=$(curl -s -X PUT http://localhost:$PORT/api/v1/auth/first_install \
+          # Complete first install via HTTPS proxy
+          echo "Completing first install for $NAME via HTTPS..."
+          FIRST_INSTALL=$(curl -k -s -X PUT https://localhost:$PROXY_PORT/api/v1/auth/first_install \
             -H "Content-Type: application/json" \
             -d '{
               "username": "admin'$PORT'",
@@ -1005,33 +1005,33 @@ jobs:
             return 1
           fi
           
-          # Get wallet info
-          USER_INFO=$(curl -s "http://localhost:$PORT/api/v1/auth" -H "Authorization: Bearer $ACCESS_TOKEN")
+          # Get wallet info via HTTPS
+          USER_INFO=$(curl -k -s "https://localhost:$PROXY_PORT/api/v1/auth" -H "Authorization: Bearer $ACCESS_TOKEN")
           ADMIN_KEY=$(echo "$USER_INFO" | jq -r '.wallets[0].adminkey')
           INVOICE_KEY=$(echo "$USER_INFO" | jq -r '.wallets[0].inkey')
           WALLET_ID=$(echo "$USER_INFO" | jq -r '.wallets[0].id')
           echo "✅ Admin key for $NAME: ${ADMIN_KEY:0:20}..."
           
-          # Install lnurlp extension
+          # Install lnurlp extension via HTTPS
           echo "Installing lnurlp extension on $NAME..."
-          curl -s -X POST http://localhost:$PORT/api/v1/extension \
+          curl -k -s -X POST https://localhost:$PROXY_PORT/api/v1/extension \
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer $ACCESS_TOKEN" \
             -d '{"ext_id": "lnurlp", "archive": "https://github.com/lnbits/lnurlp/archive/refs/tags/v1.0.1.zip", "source_repo": "https://raw.githubusercontent.com/lnbits/lnbits-extensions/main/extensions.json", "version": "1.0.1"}' > /dev/null
           
-          curl -s -X PUT "http://localhost:$PORT/api/v1/extension/lnurlp/activate" -H "Authorization: Bearer $ACCESS_TOKEN" > /dev/null
-          curl -s -X PUT "http://localhost:$PORT/api/v1/extension/lnurlp/enable" -H "Authorization: Bearer $ACCESS_TOKEN" > /dev/null
+          curl -k -s -X PUT "https://localhost:$PROXY_PORT/api/v1/extension/lnurlp/activate" -H "Authorization: Bearer $ACCESS_TOKEN" > /dev/null
+          curl -k -s -X PUT "https://localhost:$PROXY_PORT/api/v1/extension/lnurlp/enable" -H "Authorization: Bearer $ACCESS_TOKEN" > /dev/null
           echo "✅ lnurlp installed on $NAME"
           
-          # Install withdraw extension
+          # Install withdraw extension via HTTPS
           echo "Installing withdraw extension on $NAME..."
-          curl -s -X POST http://localhost:$PORT/api/v1/extension \
+          curl -k -s -X POST https://localhost:$PROXY_PORT/api/v1/extension \
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer $ACCESS_TOKEN" \
             -d '{"ext_id": "withdraw", "archive": "https://github.com/lnbits/withdraw/archive/refs/tags/v1.0.1.zip", "source_repo": "https://raw.githubusercontent.com/lnbits/lnbits-extensions/main/extensions.json", "version": "1.0.1"}' > /dev/null
           
-          curl -s -X PUT "http://localhost:$PORT/api/v1/extension/withdraw/activate" -H "Authorization: Bearer $ACCESS_TOKEN" > /dev/null
-          curl -s -X PUT "http://localhost:$PORT/api/v1/extension/withdraw/enable" -H "Authorization: Bearer $ACCESS_TOKEN" > /dev/null
+          curl -k -s -X PUT "https://localhost:$PROXY_PORT/api/v1/extension/withdraw/activate" -H "Authorization: Bearer $ACCESS_TOKEN" > /dev/null
+          curl -k -s -X PUT "https://localhost:$PROXY_PORT/api/v1/extension/withdraw/enable" -H "Authorization: Bearer $ACCESS_TOKEN" > /dev/null
           echo "✅ withdraw installed on $NAME"
           
           # Test extensions are working
@@ -1069,8 +1069,8 @@ jobs:
             -d '{
               "is_unique": true,
               "use_custom": false,
-              "title": "Test Withdraw Link",
-              "min_withdrawable": 10,
+              "title": "vouchers",
+              "min_withdrawable": 1000,
               "wait_time": 1,
               "max_withdrawable": 1000,
               "uses": 10,
@@ -1317,7 +1317,8 @@ jobs:
             
             # Step 1: Get withdraw parameters including k1 and callback URL
             echo "Getting withdraw parameters..."
-            WITHDRAW_PARAMS=$(curl -k -s "https://localhost:6443/withdraw/api/v1/lnurl/$LNBITS1_WITHDRAW_HASH")
+            # For unique withdraw links, use the link ID instead of unique_hash
+            WITHDRAW_PARAMS=$(curl -k -s "https://localhost:6443/withdraw/api/v1/lnurl/$LNBITS1_WITHDRAW_ID")
             
             if echo "$WITHDRAW_PARAMS" | jq -e '.k1' > /dev/null; then
               K1=$(echo "$WITHDRAW_PARAMS" | jq -r '.k1')
