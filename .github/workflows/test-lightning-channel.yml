@@ -1054,17 +1054,13 @@ jobs:
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer $ACCESS_TOKEN" \
             -d '{"ext_id": "lnurlFlip", "archive": "https://api.github.com/repos/echennells/lnurlFlip/zipball/v0.1.1", "source_repo": "echennells/lnurlFlip", "version": "v0.1.1"}')
-          echo "Debug: lnurlFlip install response: $INSTALL_RESP"
           
           ACTIVATE_RESP=$(curl -k -s -X PUT "https://localhost:$PROXY_PORT/api/v1/extension/lnurlFlip/activate" -H "Authorization: Bearer $ACCESS_TOKEN")
-          echo "Debug: lnurlFlip activate response: $ACTIVATE_RESP"
           
           ENABLE_RESP=$(curl -k -s -X PUT "https://localhost:$PROXY_PORT/api/v1/extension/lnurlFlip/enable" -H "Authorization: Bearer $ACCESS_TOKEN")
-          echo "Debug: lnurlFlip enable response: $ENABLE_RESP"
           
           # Check extension status
           EXT_STATUS=$(curl -k -s "https://localhost:$PROXY_PORT/api/v1/extensions" -H "Authorization: Bearer $ACCESS_TOKEN")
-          echo "Debug: Extension status after lnurlFlip install: $EXT_STATUS"
           
           echo "✅ lnurlFlip installed on $NAME"
           
@@ -1170,15 +1166,9 @@ jobs:
           # Create lnurlFlip link that combines pay and withdraw
           if [ -n "$FLIP_PAY_ID" ] && [ -n "$FLIP_WITHDRAW_ID" ]; then
             echo "Creating lnurlFlip link..."
-            echo "Debug: Creating flip with FLIP_PAY_ID=$FLIP_PAY_ID, FLIP_WITHDRAW_ID=$FLIP_WITHDRAW_ID, WALLET_ID=$WALLET_ID"
             
-            # Check extension status right before flip creation
-            echo "Debug: Checking extension status before flip creation..."
-            FLIP_EXT_STATUS=$(curl -k -s "https://localhost:$PROXY_PORT/api/v1/extensions" -H "Authorization: Bearer $ACCESS_TOKEN")
-            echo "Debug: Extension status before flip creation: $FLIP_EXT_STATUS"
             
-            # Wait a bit more for lnurlFlip specifically
-            echo "Debug: Waiting additional 5 seconds for lnurlFlip to be ready..."
+            # Wait for lnurlFlip to be ready
             sleep 5
             
             FLIP_LINK=$(curl -k -s -X POST "https://localhost:$PROXY_PORT/lnurlFlip/api/v1/lnurlflip" \
@@ -1626,27 +1616,20 @@ jobs:
               
               # Make a payment to the flip
               CALLBACK_URL=$(echo "$FLIP_RESPONSE" | jq -r '.callback')
-              echo "Debug: Callback URL: $CALLBACK_URL"
               
               # Replace the hostname with localhost:6443 for the actual request
               CALLBACK_URL_LOCAL=$(echo "$CALLBACK_URL" | sed 's|https://lnbits1.example.com|https://localhost:6443|')
-              echo "Debug: Local callback URL: $CALLBACK_URL_LOCAL"
               
-              echo "Debug: Requesting payment from callback..."
               PAY_RESPONSE=$(curl -k -s "$CALLBACK_URL_LOCAL?amount=100000")
-              echo "Debug: Pay response: $PAY_RESPONSE"
               
               if echo "$PAY_RESPONSE" | jq -e '.pr' > /dev/null; then
                 PAYMENT_REQUEST=$(echo "$PAY_RESPONSE" | jq -r '.pr')
-                echo "Got payment request: ${PAYMENT_REQUEST:0:50}..."
-                echo "Debug: Paying from LNBITS2 with admin key: ${LNBITS2_ADMIN_KEY:0:20}..."
                 
                 # Pay from LNBITS2
                 PAYMENT=$(curl -s -X POST "http://localhost:5002/api/v1/payments" \
                   -H "X-API-KEY: $LNBITS2_ADMIN_KEY" \
                   -H "Content-Type: application/json" \
                   -d "{\"out\": true, \"bolt11\": \"$PAYMENT_REQUEST\"}")
-                echo "Debug: Payment response: $PAYMENT"
                 
                 if echo "$PAYMENT" | jq -e '.payment_hash' > /dev/null; then
                   echo "✅ Payment sent to lnurlFlip"
@@ -1654,10 +1637,8 @@ jobs:
                   
                   # Test 2: Should now be in withdraw mode (balance > 50 sats)
                   echo "Test 2: After payment, should be in withdraw mode..."
-                  echo "Debug: Checking redirect URL again: $FLIP_REDIRECT_URL"
                   
                   FLIP_RESPONSE2=$(curl -k -s "$FLIP_REDIRECT_URL" -H "X-Api-Key: $LNBITS1_INVOICE_KEY")
-                  echo "Debug: Second response: $FLIP_RESPONSE2"
                   
                   if echo "$FLIP_RESPONSE2" | jq -e '.tag == "withdrawRequest"' > /dev/null; then
                     echo "✅ Correctly switched to withdraw mode after payment"
