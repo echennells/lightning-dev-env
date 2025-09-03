@@ -1575,7 +1575,7 @@ jobs:
             
             # Test 1: Should be in payment mode initially (balance is 0)
             echo "Test 1: Initial state should be payment mode..."
-            FLIP_RESPONSE=$(curl -k -s "$FLIP_REDIRECT_URL")
+            FLIP_RESPONSE=$(curl -k -s "$FLIP_REDIRECT_URL" -H "X-Api-Key: $LNBITS1_INVOICE_KEY")
             echo "Response: $FLIP_RESPONSE"
             
             if echo "$FLIP_RESPONSE" | jq -e '.tag == "payRequest"' > /dev/null; then
@@ -1601,7 +1601,7 @@ jobs:
                   
                   # Test 2: Should now be in withdraw mode (balance > 50 sats)
                   echo "Test 2: After payment, should be in withdraw mode..."
-                  FLIP_RESPONSE2=$(curl -k -s "$FLIP_REDIRECT_URL")
+                  FLIP_RESPONSE2=$(curl -k -s "$FLIP_REDIRECT_URL" -H "X-Api-Key: $LNBITS1_INVOICE_KEY")
                   
                   if echo "$FLIP_RESPONSE2" | jq -e '.tag == "withdrawRequest"' > /dev/null; then
                     echo "✅ Correctly switched to withdraw mode after payment"
