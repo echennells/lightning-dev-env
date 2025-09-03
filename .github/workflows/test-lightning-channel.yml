@@ -1585,8 +1585,12 @@ jobs:
               CALLBACK_URL=$(echo "$FLIP_RESPONSE" | jq -r '.callback')
               echo "Debug: Callback URL: $CALLBACK_URL"
               
+              # Replace the hostname with localhost:6443 for the actual request
+              CALLBACK_URL_LOCAL=$(echo "$CALLBACK_URL" | sed 's|https://lnbits1.example.com|https://localhost:6443|')
+              echo "Debug: Local callback URL: $CALLBACK_URL_LOCAL"
+              
               echo "Debug: Requesting payment from callback..."
-              PAY_RESPONSE=$(curl -k -s "$CALLBACK_URL?amount=100000")
+              PAY_RESPONSE=$(curl -k -s "$CALLBACK_URL_LOCAL?amount=100000")
               echo "Debug: Pay response: $PAY_RESPONSE"
               
               if echo "$PAY_RESPONSE" | jq -e '.pr' > /dev/null; then
@@ -1626,8 +1630,11 @@ jobs:
                       K1=$(echo "$FLIP_RESPONSE2" | jq -r '.k1')
                       WITHDRAW_CALLBACK=$(echo "$FLIP_RESPONSE2" | jq -r '.callback')
                       
+                      # Replace the hostname with localhost:6443 for the actual request
+                      WITHDRAW_CALLBACK_LOCAL=$(echo "$WITHDRAW_CALLBACK" | sed 's|https://lnbits1.example.com|https://localhost:6443|')
+                      
                       # Execute withdraw
-                      WITHDRAW_RESULT=$(curl -k -s "$WITHDRAW_CALLBACK&k1=$K1&pr=$WITHDRAW_PR")
+                      WITHDRAW_RESULT=$(curl -k -s "$WITHDRAW_CALLBACK_LOCAL&k1=$K1&pr=$WITHDRAW_PR")
                       
                       if echo "$WITHDRAW_RESULT" | jq -e '.status == "OK"' > /dev/null; then
                         echo "✅ Successfully withdrew from lnurlFlip"
