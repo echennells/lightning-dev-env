@@ -1124,10 +1124,53 @@ jobs:
             WITHDRAW_LNURL=""
           fi
           
+          # Create dedicated LNURL-P and withdraw links exclusively for lnurlFlip
+          echo "Creating dedicated LNURL-P link for lnurlFlip..."
+          FLIP_PAY_LINK=$(curl -k -s -X POST "https://localhost:$PROXY_PORT/lnurlp/api/v1/links" \
+            -H "X-API-KEY: $ADMIN_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "description": "Flip Pay Link",
+              "min": 100,
+              "max": 10000,
+              "comment_chars": 255
+            }')
+          
+          if echo "$FLIP_PAY_LINK" | jq -e '.id' > /dev/null; then
+            FLIP_PAY_ID=$(echo "$FLIP_PAY_LINK" | jq -r '.id')
+            echo "✅ Flip LNURL-P link created: $FLIP_PAY_ID"
+          else
+            echo "❌ Flip LNURL-P link creation failed: $FLIP_PAY_LINK"
+            FLIP_PAY_ID=""
+          fi
+          
+          echo "Creating dedicated withdraw link for lnurlFlip..."
+          FLIP_WITHDRAW_LINK=$(curl -k -s -X POST "https://localhost:$PROXY_PORT/withdraw/api/v1/links" \
+            -H "X-Api-Key: $ADMIN_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "is_unique": true,
+              "use_custom": false,
+              "title": "flip vouchers",
+              "min_withdrawable": 100,
+              "wait_time": 1,
+              "max_withdrawable": 5000,
+              "uses": 10,
+              "custom_url": null
+            }')
+          
+          if echo "$FLIP_WITHDRAW_LINK" | jq -e '.id' > /dev/null; then
+            FLIP_WITHDRAW_ID=$(echo "$FLIP_WITHDRAW_LINK" | jq -r '.id')
+            echo "✅ Flip withdraw link created: $FLIP_WITHDRAW_ID"
+          else
+            echo "❌ Flip withdraw link creation failed: $FLIP_WITHDRAW_LINK"
+            FLIP_WITHDRAW_ID=""
+          fi
+
           # Create lnurlFlip link that combines pay and withdraw
-          if [ -n "$PAY_ID" ] && [ -n "$WITHDRAW_ID" ]; then
+          if [ -n "$FLIP_PAY_ID" ] && [ -n "$FLIP_WITHDRAW_ID" ]; then
             echo "Creating lnurlFlip link..."
-            echo "Debug: Creating flip with PAY_ID=$PAY_ID, WITHDRAW_ID=$WITHDRAW_ID, WALLET_ID=$WALLET_ID"
+            echo "Debug: Creating flip with FLIP_PAY_ID=$FLIP_PAY_ID, FLIP_WITHDRAW_ID=$FLIP_WITHDRAW_ID, WALLET_ID=$WALLET_ID"
             
             # Check extension status right before flip creation
             echo "Debug: Checking extension status before flip creation..."
@@ -1144,8 +1187,8 @@ jobs:
               -d "{
                 \"name\": \"Test Flip $NAME\",
                 \"wallet\": \"$WALLET_ID\",
-                \"selectedLnurlp\": \"$PAY_ID\",
-                \"selectedLnurlw\": \"$WITHDRAW_ID\"
+                \"selectedLnurlp\": \"$FLIP_PAY_ID\",
+                \"selectedLnurlw\": \"$FLIP_WITHDRAW_ID\"
               }")
             
             if echo "$FLIP_LINK" | jq -e '.id' > /dev/null; then
