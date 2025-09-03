@@ -1583,17 +1583,23 @@ jobs:
               
               # Make a payment to the flip
               CALLBACK_URL=$(echo "$FLIP_RESPONSE" | jq -r '.callback')
+              echo "Debug: Callback URL: $CALLBACK_URL"
+              
+              echo "Debug: Requesting payment from callback..."
               PAY_RESPONSE=$(curl -k -s "$CALLBACK_URL?amount=100000")
+              echo "Debug: Pay response: $PAY_RESPONSE"
               
               if echo "$PAY_RESPONSE" | jq -e '.pr' > /dev/null; then
                 PAYMENT_REQUEST=$(echo "$PAY_RESPONSE" | jq -r '.pr')
-                echo "Got payment request, paying from LNBITS2..."
+                echo "Got payment request: ${PAYMENT_REQUEST:0:50}..."
+                echo "Debug: Paying from LNBITS2 with admin key: ${LNBITS2_ADMIN_KEY:0:20}..."
                 
                 # Pay from LNBITS2
                 PAYMENT=$(curl -s -X POST "http://localhost:5002/api/v1/payments" \
                   -H "X-API-KEY: $LNBITS2_ADMIN_KEY" \
                   -H "Content-Type: application/json" \
                   -d "{\"out\": true, \"bolt11\": \"$PAYMENT_REQUEST\"}")
+                echo "Debug: Payment response: $PAYMENT"
                 
                 if echo "$PAYMENT" | jq -e '.payment_hash' > /dev/null; then
                   echo "✅ Payment sent to lnurlFlip"
@@ -1601,7 +1607,10 @@ jobs:
                   
                   # Test 2: Should now be in withdraw mode (balance > 50 sats)
                   echo "Test 2: After payment, should be in withdraw mode..."
+                  echo "Debug: Checking redirect URL again: $FLIP_REDIRECT_URL"
+                  
                   FLIP_RESPONSE2=$(curl -k -s "$FLIP_REDIRECT_URL" -H "X-Api-Key: $LNBITS1_INVOICE_KEY")
+                  echo "Debug: Second response: $FLIP_RESPONSE2"
                   
                   if echo "$FLIP_RESPONSE2" | jq -e '.tag == "withdrawRequest"' > /dev/null; then
                     echo "✅ Correctly switched to withdraw mode after payment"
