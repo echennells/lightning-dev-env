@@ -1569,9 +1569,9 @@ jobs:
             
             echo "Got lnurlFlip LNURL: ${FLIP_LNURL:0:50}..."
             
-            # Test the lnurlFlip endpoint directly (like Parts 1 & 2)
-            echo "Testing lnurlFlip endpoint directly..."
-            FLIP_REDIRECT_URL="https://localhost:6443/lnurlFlip/api/v1/lnurl/$LNBITS1_FLIP_ID"
+            # Test the lnurlFlip redirect endpoint directly (like Parts 1 & 2)
+            echo "Testing lnurlFlip redirect endpoint directly..."
+            FLIP_REDIRECT_URL="https://localhost:6443/lnurlFlip/api/v1/redirect/$LNBITS1_FLIP_ID"
             
             # Test 1: Should be in payment mode initially (balance is 0)
             echo "Test 1: Initial state should be payment mode..."
