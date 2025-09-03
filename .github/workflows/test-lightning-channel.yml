@@ -1624,7 +1624,7 @@ jobs:
                     WITHDRAW_INVOICE=$(curl -s -X POST "http://localhost:5002/api/v1/payments" \
                       -H "X-Api-Key: $LNBITS2_INVOICE_KEY" \
                       -H "Content-Type: application/json" \
-                      -d '{"out": false, "amount": 2000, "memo": "Withdraw from flip"}')
+                      -d '{"out": false, "amount": 100, "memo": "Withdraw from flip"}')
                     
                     if WITHDRAW_PR=$(echo "$WITHDRAW_INVOICE" | jq -r '.bolt11' 2>/dev/null) && [ "$WITHDRAW_PR" != "null" ]; then
                       K1=$(echo "$FLIP_RESPONSE2" | jq -r '.k1')
