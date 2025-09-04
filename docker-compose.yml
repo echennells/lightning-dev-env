@@ -154,7 +154,7 @@ services:
       - "9737:9737"
 
   lnbits-1:
-    image: lnbits/lnbits:v1.2.1
+    image: lnbits/lnbits:latest
     hostname: lnbits-1
     depends_on:
       - litd-1
@@ -187,7 +187,7 @@ services:
       - "5001:5000"
 
   lnbits-2:
-    image: lnbits/lnbits:v1.2.1
+    image: lnbits/lnbits:latest
     hostname: lnbits-2
     depends_on:
       - litd-2
@@ -218,7 +218,7 @@ services:
       - "5002:5000"
 
   lnbits-3:
-    image: lnbits/lnbits:v1.2.1
+    image: lnbits/lnbits:latest
     hostname: lnbits-3
     depends_on:
       - lnd

@@ -118,7 +118,7 @@ echo "Installing lnurlp extension..."
 LNURLP_INSTALL=$(curl -k -s -X POST "https://localhost:5443/api/v1/extension" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $ACCESS_TOKEN" \
-  -d '{"ext_id": "lnurlp", "archive": "https://github.com/lnbits/lnurlp/archive/refs/tags/v1.0.1.zip", "source_repo": "https://raw.githubusercontent.com/lnbits/lnbits-extensions/main/extensions.json", "version": "1.0.1"}')
+  -d '{"ext_id": "lnurlp", "archive": "https://github.com/lnbits/lnurlp/archive/refs/tags/v1.1.2.zip", "source_repo": "https://raw.githubusercontent.com/lnbits/lnbits-extensions/main/extensions.json", "version": "1.1.2"}')
 
 echo "lnurlp install: $LNURLP_INSTALL"
 
