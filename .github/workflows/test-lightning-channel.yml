@@ -1352,10 +1352,7 @@ jobs:
     - name: Test LNURL-P and Withdraw with Real Lightning Payments
       if: success()
       run: |
-        echo "============================================"
-        echo "TESTING LNURL-P AND WITHDRAW WITH REAL PAYMENTS"
-        echo "============================================"
-        echo "This test combines real LNURL-P and withdraw testing with verified money movement"
+        echo "Testing LNURL-P and Withdraw with Real Payments"
         
         # Source the saved keys
         source lnbits_keys.env
