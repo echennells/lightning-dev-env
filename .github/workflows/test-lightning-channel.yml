@@ -804,112 +804,6 @@ jobs:
           echo "Assets list output: $ASSETS"
         fi
 
-    - name: Test Taproot Assets Max Receivable Bug Detection
-      if: success()
-      run: |
-        echo "=== Testing Taproot Assets Max Receivable Calculation ==="
-        echo "This test detects the bug where Max Receivable = capacity - local_balance"
-        echo "Instead of the correct calculation: Max Receivable = remote_balance"
-
-        # Function to test max receivable calculation
-        test_max_receivable_calculation() {
-          local extension_name="$1"
-          echo "🔍 Testing max receivable calculation for $extension_name..."
-
-          # Check if the extension is installed and accessible
-          if curl -s "http://localhost:5001/$extension_name" | grep -q "Taproot Assets\|taproot"; then
-            echo "✅ $extension_name extension is accessible"
-
-            # Try to get asset data from the API
-            echo "📡 Fetching asset data from API..."
-            ASSET_API_RESPONSE=$(curl -s "http://localhost:5001/$extension_name/api/v1/taproot/listassets" \
-              -H "X-Api-Key: $LNBITS1_ADMIN_KEY" 2>/dev/null || echo "API_FAILED")
-
-            if [ "$ASSET_API_RESPONSE" != "API_FAILED" ] && echo "$ASSET_API_RESPONSE" | jq -e '.success' >/dev/null 2>&1; then
-              echo "✅ Successfully retrieved asset data from API"
-
-              # Extract asset with channel info
-              ASSETS_WITH_CHANNELS=$(echo "$ASSET_API_RESPONSE" | jq -r '.data[] | select(.channel_info != null)')
-
-              if [ -n "$ASSETS_WITH_CHANNELS" ] && [ "$ASSETS_WITH_CHANNELS" != "null" ]; then
-                echo "$ASSETS_WITH_CHANNELS" | jq -c '.' | while IFS= read -r asset; do
-                  echo "🔍 Analyzing asset channel data..."
-
-                  # Extract channel information
-                  CAPACITY=$(echo "$asset" | jq -r '.channel_info.capacity // 0')
-                  LOCAL_BALANCE=$(echo "$asset" | jq -r '.channel_info.local_balance // 0')
-                  REMOTE_BALANCE=$(echo "$asset" | jq -r '.channel_info.remote_balance // 0')
-                  ASSET_ID=$(echo "$asset" | jq -r '.asset_id // "unknown"')
-                  PEER_ALIAS=$(echo "$asset" | jq -r '.channel_info.peer_alias // "unknown"')
-
-                  echo "   Asset ID: $ASSET_ID"
-                  echo "   Peer: $PEER_ALIAS"
-                  echo "   Capacity: $CAPACITY sats"
-                  echo "   Local Balance: $LOCAL_BALANCE sats"
-                  echo "   Remote Balance: $REMOTE_BALANCE sats"
-
-                  # Calculate what the UI would show vs what it should show
-                  BUGGY_MAX_RECEIVABLE=$((CAPACITY - LOCAL_BALANCE))
-                  CORRECT_MAX_RECEIVABLE=$REMOTE_BALANCE
-
-                  echo "   🐛 Buggy calculation (capacity - local): $BUGGY_MAX_RECEIVABLE sats"
-                  echo "   ✅ Correct calculation (remote_balance): $CORRECT_MAX_RECEIVABLE sats"
-
-                  # Check if the bug exists (values are different)
-                  if [ "$BUGGY_MAX_RECEIVABLE" != "$CORRECT_MAX_RECEIVABLE" ]; then
-                    echo "   🚨 BUG DETECTED: Max Receivable calculation is incorrect!"
-                    echo "   📊 The UI template uses: capacity - local_balance = $BUGGY_MAX_RECEIVABLE"
-                    echo "   🎯 But it should use: remote_balance = $CORRECT_MAX_RECEIVABLE"
-                    echo "   💡 Difference: $((BUGGY_MAX_RECEIVABLE - CORRECT_MAX_RECEIVABLE)) sats"
-
-                    # This is expected if there are fees or if the channel isn't perfectly balanced
-                    if [ $((BUGGY_MAX_RECEIVABLE - CORRECT_MAX_RECEIVABLE)) -gt 1000 ]; then
-                      echo "   ⚠️ WARNING: Large discrepancy detected (>1000 sats)!"
-                      echo "   This indicates the max receivable calculation bug is present"
-                    else
-                      echo "   ℹ️ Small discrepancy - likely due to fees or reserves"
-                    fi
-                  else
-                    echo "   ✅ Max receivable calculation appears correct"
-                  fi
-
-                  echo ""
-                done
-              else
-                echo "ℹ️ No assets with channel information found"
-              fi
-            else
-              echo "⚠️ Could not fetch asset data from API"
-              echo "API Response: ${ASSET_API_RESPONSE:0:200}..."
-            fi
-          else
-            echo "⚠️ $extension_name extension not accessible"
-          fi
-        }
-
-        # Source the saved keys
-        source lnbits_keys.env
-
-        # Test the taproot_assets extension
-        test_max_receivable_calculation "taproot_assets"
-
-        # Also check if the template calculation matches what we expect
-        echo "🔍 Checking frontend template calculation..."
-        if [ -f "lnbits*/extensions/taproot_assets/templates/taproot_assets/index.html" ]; then
-          TEMPLATE_CALC=$(grep -n "Max Receivable" lnbits*/extensions/taproot_assets/templates/taproot_assets/index.html | head -1)
-          if echo "$TEMPLATE_CALC" | grep -q "capacity.*local_balance"; then
-            echo "🐛 TEMPLATE BUG CONFIRMED: Template uses capacity - local_balance"
-            echo "   Found: $TEMPLATE_CALC"
-            echo "   🎯 Should use: remote_balance instead"
-          elif echo "$TEMPLATE_CALC" | grep -q "remote_balance"; then
-            echo "✅ Template calculation appears correct (uses remote_balance)"
-          else
-            echo "ℹ️ Template calculation method unclear"
-          fi
-        fi
-
-        echo -e "\n✅ Max Receivable bug detection test complete!"
-
     - name: Show logs on failure
       if: failure()
       run: |
@@ -2321,6 +2215,109 @@ jobs:
 
         echo -e "\n✅ Cross-instance payment tests complete!"
         echo "🎉 All LNbits wallet balances and Lightning channel states verified!"
+
+    - name: Test Taproot Assets Max Receivable Bug Detection
+      if: success()
+      run: |
+        echo "=== Testing Taproot Assets Max Receivable Calculation ==="
+        echo "This test detects the bug where Max Receivable = capacity - local_balance"
+        echo "Instead of the correct calculation: Max Receivable = remote_balance"
+
+        # Function to test max receivable calculation
+        test_max_receivable_calculation() {
+          local extension_name="$1"
+          echo "🔍 Testing max receivable calculation for $extension_name..."
+
+          # Check if the extension is installed and accessible
+          if curl -s "http://localhost:5001/$extension_name" | grep -q "Taproot Assets\|taproot"; then
+            echo "✅ $extension_name extension is accessible"
+
+            # Try to get asset data from the API
+            echo "📡 Fetching asset data from API..."
+            ASSET_API_RESPONSE=$(curl -s "http://localhost:5001/$extension_name/api/v1/taproot/listassets" \
+              -H "X-Api-Key: $LNBITS1_ADMIN_KEY" 2>/dev/null || echo "API_FAILED")
+
+            if [ "$ASSET_API_RESPONSE" != "API_FAILED" ] && echo "$ASSET_API_RESPONSE" | jq -e '.success' >/dev/null 2>&1; then
+              echo "✅ Successfully retrieved asset data from API"
+
+              # Extract asset with channel info
+              ASSETS_WITH_CHANNELS=$(echo "$ASSET_API_RESPONSE" | jq -r '.data[] | select(.channel_info != null)')
+
+              if [ -n "$ASSETS_WITH_CHANNELS" ] && [ "$ASSETS_WITH_CHANNELS" != "null" ]; then
+                echo "$ASSETS_WITH_CHANNELS" | jq -c '.' | while IFS= read -r asset; do
+                  echo "🔍 Analyzing asset channel data..."
+
+                  # Extract channel information
+                  CAPACITY=$(echo "$asset" | jq -r '.channel_info.capacity // 0')
+                  LOCAL_BALANCE=$(echo "$asset" | jq -r '.channel_info.local_balance // 0')
+                  REMOTE_BALANCE=$(echo "$asset" | jq -r '.channel_info.remote_balance // 0')
+                  ASSET_ID=$(echo "$asset" | jq -r '.asset_id // "unknown"')
+                  PEER_ALIAS=$(echo "$asset" | jq -r '.channel_info.peer_alias // "unknown"')
+
+                  echo "   Asset ID: $ASSET_ID"
+                  echo "   Peer: $PEER_ALIAS"
+                  echo "   Capacity: $CAPACITY sats"
+                  echo "   Local Balance: $LOCAL_BALANCE sats"
+                  echo "   Remote Balance: $REMOTE_BALANCE sats"
+
+                  # Calculate what the UI would show vs what it should show
+                  BUGGY_MAX_RECEIVABLE=$((CAPACITY - LOCAL_BALANCE))
+                  CORRECT_MAX_RECEIVABLE=$REMOTE_BALANCE
+
+                  echo "   🐛 Buggy calculation (capacity - local): $BUGGY_MAX_RECEIVABLE sats"
+                  echo "   ✅ Correct calculation (remote_balance): $CORRECT_MAX_RECEIVABLE sats"
+
+                  # Check if the bug exists (values are different)
+                  if [ "$BUGGY_MAX_RECEIVABLE" != "$CORRECT_MAX_RECEIVABLE" ]; then
+                    echo "   🚨 BUG DETECTED: Max Receivable calculation is incorrect!"
+                    echo "   📊 The UI template uses: capacity - local_balance = $BUGGY_MAX_RECEIVABLE"
+                    echo "   🎯 But it should use: remote_balance = $CORRECT_MAX_RECEIVABLE"
+                    echo "   💡 Difference: $((BUGGY_MAX_RECEIVABLE - CORRECT_MAX_RECEIVABLE)) sats"
+
+                    # This is expected if there are fees or if the channel isn't perfectly balanced
+                    if [ $((BUGGY_MAX_RECEIVABLE - CORRECT_MAX_RECEIVABLE)) -gt 1000 ]; then
+                      echo "   ⚠️ WARNING: Large discrepancy detected (>1000 sats)!"
+                      echo "   This indicates the max receivable calculation bug is present"
+                    else
+                      echo "   ℹ️ Small discrepancy - likely due to fees or reserves"
+                    fi
+                  else
+                    echo "   ✅ Max receivable calculation appears correct"
+                  fi
+
+                  echo ""
+                done
+              else
+                echo "ℹ️ No assets with channel information found"
+              fi
+            else
+              echo "⚠️ Could not fetch asset data from API"
+              echo "API Response: ${ASSET_API_RESPONSE:0:200}..."
+            fi
+          else
+            echo "⚠️ $extension_name extension not accessible"
+          fi
+        }
+
+        # Test the taproot_assets extension
+        test_max_receivable_calculation "taproot_assets"
+
+        # Also check if the template calculation matches what we expect
+        echo "🔍 Checking frontend template calculation..."
+        if [ -f "lnbits*/extensions/taproot_assets/templates/taproot_assets/index.html" ]; then
+          TEMPLATE_CALC=$(grep -n "Max Receivable" lnbits*/extensions/taproot_assets/templates/taproot_assets/index.html | head -1)
+          if echo "$TEMPLATE_CALC" | grep -q "capacity.*local_balance"; then
+            echo "🐛 TEMPLATE BUG CONFIRMED: Template uses capacity - local_balance"
+            echo "   Found: $TEMPLATE_CALC"
+            echo "   🎯 Should use: remote_balance instead"
+          elif echo "$TEMPLATE_CALC" | grep -q "remote_balance"; then
+            echo "✅ Template calculation appears correct (uses remote_balance)"
+          else
+            echo "ℹ️ Template calculation method unclear"
+          fi
+        fi
+
+        echo -e "\n✅ Max Receivable bug detection test complete!"
 
     - name: Cleanup
       if: always()
