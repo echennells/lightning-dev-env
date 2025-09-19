@@ -1868,9 +1868,81 @@ jobs:
       if: success()
       run: |
         echo "=== Testing transactions between all 3 LNbits instances ==="
-        
+
         # Source the saved keys
         source lnbits_keys.env
+
+        # Helper function to capture all channel balances
+        capture_channel_balances() {
+          local label="$1"
+          echo "📊 Capturing channel balances: $label"
+
+          # Get litd-1 channel balances and details
+          LITD1_CHANNELS=$(docker compose exec -T litd-1 lncli --network=regtest listchannels)
+          LITD1_LOCAL=$(echo "$LITD1_CHANNELS" | jq '[.channels[].local_balance | tonumber] | add')
+          LITD1_REMOTE=$(echo "$LITD1_CHANNELS" | jq '[.channels[].remote_balance | tonumber] | add')
+          LITD1_CAPACITY=$(echo "$LITD1_CHANNELS" | jq '[.channels[].capacity | tonumber] | add')
+          LITD1_PENDING=$(echo "$LITD1_CHANNELS" | jq '[.channels[].pending_htlcs[].amount | tonumber] | add // 0')
+          LITD1_ACTIVE_COUNT=$(echo "$LITD1_CHANNELS" | jq '[.channels[] | select(.active == true)] | length')
+          LITD1_TOTAL_COUNT=$(echo "$LITD1_CHANNELS" | jq '.channels | length')
+
+          # Get litd-2 channel balances and details
+          LITD2_CHANNELS=$(docker compose exec -T litd-2 lncli --network=regtest --rpcserver=litd-2:10010 listchannels)
+          LITD2_LOCAL=$(echo "$LITD2_CHANNELS" | jq '[.channels[].local_balance | tonumber] | add')
+          LITD2_REMOTE=$(echo "$LITD2_CHANNELS" | jq '[.channels[].remote_balance | tonumber] | add')
+          LITD2_CAPACITY=$(echo "$LITD2_CHANNELS" | jq '[.channels[].capacity | tonumber] | add')
+          LITD2_PENDING=$(echo "$LITD2_CHANNELS" | jq '[.channels[].pending_htlcs[].amount | tonumber] | add // 0')
+          LITD2_ACTIVE_COUNT=$(echo "$LITD2_CHANNELS" | jq '[.channels[] | select(.active == true)] | length')
+          LITD2_TOTAL_COUNT=$(echo "$LITD2_CHANNELS" | jq '.channels | length')
+
+          # Get LND channel balances and details
+          LND_CHANNELS=$(docker compose exec -T lnd lncli --network=regtest --rpcserver=lnd:10011 listchannels)
+          LND_LOCAL=$(echo "$LND_CHANNELS" | jq '[.channels[].local_balance | tonumber] | add')
+          LND_REMOTE=$(echo "$LND_CHANNELS" | jq '[.channels[].remote_balance | tonumber] | add')
+          LND_CAPACITY=$(echo "$LND_CHANNELS" | jq '[.channels[].capacity | tonumber] | add')
+          LND_PENDING=$(echo "$LND_CHANNELS" | jq '[.channels[].pending_htlcs[].amount | tonumber] | add // 0')
+          LND_ACTIVE_COUNT=$(echo "$LND_CHANNELS" | jq '[.channels[] | select(.active == true)] | length')
+          LND_TOTAL_COUNT=$(echo "$LND_CHANNELS" | jq '.channels | length')
+
+          echo "  litd-1: local=$LITD1_LOCAL, remote=$LITD1_REMOTE, capacity=$LITD1_CAPACITY, pending=$LITD1_PENDING, channels=$LITD1_ACTIVE_COUNT/$LITD1_TOTAL_COUNT"
+          echo "  litd-2: local=$LITD2_LOCAL, remote=$LITD2_REMOTE, capacity=$LITD2_CAPACITY, pending=$LITD2_PENDING, channels=$LITD2_ACTIVE_COUNT/$LITD2_TOTAL_COUNT"
+          echo "  lnd:    local=$LND_LOCAL, remote=$LND_REMOTE, capacity=$LND_CAPACITY, pending=$LND_PENDING, channels=$LND_ACTIVE_COUNT/$LND_TOTAL_COUNT"
+        }
+
+        # Helper function to verify channel balance changes
+        verify_channel_balance_changes() {
+          local expected_amount="$1"
+          local from_node="$2"
+          local to_node="$3"
+
+          echo "🔍 Verifying channel balance changes for $expected_amount sats from $from_node to $to_node"
+
+          # Compare before and after balances using the correct variable names for each payment
+          case "$from_node" in
+            "litd-1")
+              local_diff=$((LITD1_LOCAL_BEFORE_1 - LITD1_LOCAL))
+              ;;
+            "litd-2")
+              local_diff=$((LITD2_LOCAL_BEFORE_2 - LITD2_LOCAL))
+              ;;
+            "lnd")
+              local_diff=$((LND_LOCAL_BEFORE_3 - LND_LOCAL))
+              ;;
+          esac
+
+          echo "  Channel balance change for $from_node:"
+          echo "    Local decreased by: $local_diff sats"
+
+          # Allow for small fee differences (up to 100 sats)
+          if [ "$local_diff" -ge $((expected_amount - 100)) ] && [ "$local_diff" -le $((expected_amount + 100)) ]; then
+            echo "  ✅ Channel balances correctly updated for $from_node"
+            return 0
+          else
+            echo "  ⚠️ WARNING: Channel balance change doesn't match expected amount!"
+            echo "    Expected: ~$expected_amount sats, Got: $local_diff sats"
+            return 1
+          fi
+        }
         
         # Test 1: Send payment from LNBITS1 to LNBITS2
         echo -e "\n=========================================="
