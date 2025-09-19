@@ -1083,23 +1083,15 @@ jobs:
             echo "Found extension directory: $EXTENSION_DIR"
 
             # Create CI-specific configuration for regtest network
-            sudo tee "$EXTENSION_DIR/taproot_assets.conf" > /dev/null << 'CONFIG_EOF'
+            sudo bash -c "cat > '$EXTENSION_DIR/taproot_assets.conf' << 'EOF'
 # Taproot Assets Extension Configuration for CI (regtest)
-
-# TAPD connection settings for Docker LiT
 TAPD_HOST=localhost:10009
 TAPD_NETWORK=regtest
-
-# Docker paths mapped to host
 TAPD_TLS_CERT_PATH=/home/ubuntu/lightning-dev-env/docker-compose/data/litd-1/.lnd/tls.cert
 TAPD_MACAROON_PATH=/home/ubuntu/lightning-dev-env/docker-compose/data/litd-1/.tapd/data/regtest/admin.macaroon
-
-# LND connection settings
 LND_REST_MACAROON=/home/ubuntu/lightning-dev-env/docker-compose/data/litd-1/.lnd/data/chain/bitcoin/regtest/admin.macaroon
-
-# Fee settings
 TAPD_DEFAULT_SAT_FEE=1
-CONFIG_EOF
+EOF"
             echo "✅ CI-specific configuration created for extension"
           else
             echo "⚠️  Could not find taproot_assets extension directory"
