@@ -1111,7 +1111,7 @@ jobs:
           curl -k -s -X PUT "https://localhost:$PROXY_PORT/api/v1/extension/taproot_assets/enable" -H "Authorization: Bearer $ACCESS_TOKEN" > /dev/null 2>&1 || true
 
           # Check extension status after configuration
-          EXT_STATUS_AFTER=$(curl -k -s "https://localhost:$PROXY_PORT/api/v1/extensions" -H "Authorization: Bearer $ACCESS_TOKEN" | jq -r '.extensions[] | select(.id=="taproot_assets") | .active')
+          EXT_STATUS_AFTER=$(curl -k -s "https://localhost:$PROXY_PORT/api/v1/extensions" -H "Authorization: Bearer $ACCESS_TOKEN" | jq -r '.extensions[]? | select(.id=="taproot_assets")? | .active?' 2>/dev/null || echo "unknown")
           echo "Taproot Assets extension status: $EXT_STATUS_AFTER"
 
           echo "✅ Taproot Assets extension configured and setup attempted on $NAME"
