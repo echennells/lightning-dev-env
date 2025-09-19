@@ -1353,9 +1353,119 @@ jobs:
       if: success()
       run: |
         echo "Testing LNURL-P and Withdraw with Real Payments"
-        
+
         # Source the saved keys
         source lnbits_keys.env
+
+        # Helper function to capture all channel balances
+        capture_channel_balances() {
+          local label="$1"
+          echo "📊 Capturing channel balances: $label"
+
+          # Get litd-1 channel balances and details
+          LITD1_CHANNELS=$(docker compose exec -T litd-1 lncli --network=regtest listchannels)
+          LITD1_LOCAL=$(echo "$LITD1_CHANNELS" | jq '[.channels[].local_balance | tonumber] | add')
+          LITD1_REMOTE=$(echo "$LITD1_CHANNELS" | jq '[.channels[].remote_balance | tonumber] | add')
+          LITD1_CAPACITY=$(echo "$LITD1_CHANNELS" | jq '[.channels[].capacity | tonumber] | add')
+          LITD1_PENDING=$(echo "$LITD1_CHANNELS" | jq '[.channels[].pending_htlcs[].amount | tonumber] | add // 0')
+          LITD1_ACTIVE_COUNT=$(echo "$LITD1_CHANNELS" | jq '[.channels[] | select(.active == true)] | length')
+          LITD1_TOTAL_COUNT=$(echo "$LITD1_CHANNELS" | jq '.channels | length')
+
+          # Get litd-2 channel balances and details
+          LITD2_CHANNELS=$(docker compose exec -T litd-2 lncli --network=regtest --rpcserver=litd-2:10010 listchannels)
+          LITD2_LOCAL=$(echo "$LITD2_CHANNELS" | jq '[.channels[].local_balance | tonumber] | add')
+          LITD2_REMOTE=$(echo "$LITD2_CHANNELS" | jq '[.channels[].remote_balance | tonumber] | add')
+          LITD2_CAPACITY=$(echo "$LITD2_CHANNELS" | jq '[.channels[].capacity | tonumber] | add')
+          LITD2_PENDING=$(echo "$LITD2_CHANNELS" | jq '[.channels[].pending_htlcs[].amount | tonumber] | add // 0')
+          LITD2_ACTIVE_COUNT=$(echo "$LITD2_CHANNELS" | jq '[.channels[] | select(.active == true)] | length')
+          LITD2_TOTAL_COUNT=$(echo "$LITD2_CHANNELS" | jq '.channels | length')
+
+          # Get LND channel balances and details
+          LND_CHANNELS=$(docker compose exec -T lnd lncli --network=regtest --rpcserver=lnd:10011 listchannels)
+          LND_LOCAL=$(echo "$LND_CHANNELS" | jq '[.channels[].local_balance | tonumber] | add')
+          LND_REMOTE=$(echo "$LND_CHANNELS" | jq '[.channels[].remote_balance | tonumber] | add')
+          LND_CAPACITY=$(echo "$LND_CHANNELS" | jq '[.channels[].capacity | tonumber] | add')
+          LND_PENDING=$(echo "$LND_CHANNELS" | jq '[.channels[].pending_htlcs[].amount | tonumber] | add // 0')
+          LND_ACTIVE_COUNT=$(echo "$LND_CHANNELS" | jq '[.channels[] | select(.active == true)] | length')
+          LND_TOTAL_COUNT=$(echo "$LND_CHANNELS" | jq '.channels | length')
+
+          echo "  litd-1: local=$LITD1_LOCAL, remote=$LITD1_REMOTE, capacity=$LITD1_CAPACITY, pending=$LITD1_PENDING, channels=$LITD1_ACTIVE_COUNT/$LITD1_TOTAL_COUNT"
+          echo "  litd-2: local=$LITD2_LOCAL, remote=$LITD2_REMOTE, capacity=$LITD2_CAPACITY, pending=$LITD2_PENDING, channels=$LITD2_ACTIVE_COUNT/$LITD2_TOTAL_COUNT"
+          echo "  lnd:    local=$LND_LOCAL, remote=$LND_REMOTE, capacity=$LND_CAPACITY, pending=$LND_PENDING, channels=$LND_ACTIVE_COUNT/$LND_TOTAL_COUNT"
+
+          # Check for channel health issues
+          check_channel_health() {
+            local node_name="$1"
+            local channels_json="$2"
+            local issues=0
+
+            # Check for inactive channels
+            local inactive_count=$(echo "$channels_json" | jq '[.channels[] | select(.active == false)] | length')
+            if [ "$inactive_count" -gt 0 ]; then
+              echo "  ⚠️ $node_name: $inactive_count inactive channels detected"
+              issues=$((issues + 1))
+            fi
+
+            # Check for channels with high pending HTLC count
+            local htlc_channels=$(echo "$channels_json" | jq '.channels[] | select((.pending_htlcs | length) > 5)')
+            if [ -n "$htlc_channels" ] && [ "$htlc_channels" != "null" ]; then
+              echo "  ⚠️ $node_name: Channels with high HTLC count detected"
+              issues=$((issues + 1))
+            fi
+
+            # Check for very low balances (less than 1000 sats)
+            local low_balance_channels=$(echo "$channels_json" | jq '.channels[] | select(.local_balance < 1000)')
+            if [ -n "$low_balance_channels" ] && [ "$low_balance_channels" != "null" ]; then
+              echo "  ⚠️ $node_name: Channels with very low local balance detected"
+              issues=$((issues + 1))
+            fi
+
+            return $issues
+          }
+
+          check_channel_health "litd-1" "$LITD1_CHANNELS"
+          check_channel_health "litd-2" "$LITD2_CHANNELS"
+          check_channel_health "lnd" "$LND_CHANNELS"
+        }
+
+        # Helper function to verify channel balance changes
+        verify_channel_balance_changes() {
+          local expected_amount="$1"
+          local from_node="$2"
+          local to_node="$3"
+
+          echo "🔍 Verifying channel balance changes for $expected_amount sats from $from_node to $to_node"
+
+          # Compare before and after balances
+          case "$from_node" in
+            "litd-1")
+              local_diff=$((LITD1_LOCAL_BEFORE - LITD1_LOCAL))
+              remote_diff=$((LITD1_REMOTE - LITD1_REMOTE_BEFORE))
+              ;;
+            "litd-2")
+              local_diff=$((LITD2_LOCAL_BEFORE - LITD2_LOCAL))
+              remote_diff=$((LITD2_REMOTE - LITD2_REMOTE_BEFORE))
+              ;;
+            "lnd")
+              local_diff=$((LND_LOCAL_BEFORE - LND_LOCAL))
+              remote_diff=$((LND_REMOTE - LND_REMOTE_BEFORE))
+              ;;
+          esac
+
+          echo "  Channel balance change for $from_node:"
+          echo "    Local decreased by: $local_diff sats"
+          echo "    Remote increased by: $remote_diff sats"
+
+          # Allow for small fee differences (up to 100 sats)
+          if [ "$local_diff" -ge $((expected_amount - 100)) ] && [ "$local_diff" -le $((expected_amount + 100)) ]; then
+            echo "  ✅ Channel balances correctly updated for $from_node"
+            return 0
+          else
+            echo "  ⚠️ WARNING: Channel balance change doesn't match expected amount!"
+            echo "    Expected: ~$expected_amount sats, Got: $local_diff sats"
+            return 1
+          fi
+        }
         
         # PART 1: Test LNURL-P (Real Payment)
         echo -e "\n===========================================" 
@@ -1382,6 +1492,15 @@ jobs:
             LNBITS2_BEFORE=$(curl -s "http://localhost:5002/api/v1/wallet" -H "X-Api-Key: $LNBITS2_INVOICE_KEY" | jq -r '.balance')
             echo "   LNBITS1 (receiver): $LNBITS1_BEFORE msat"
             echo "   LNBITS2 (sender):   $LNBITS2_BEFORE msat"
+
+            # Capture channel balances before payment
+            capture_channel_balances "BEFORE LNURL-P payment"
+            LITD1_LOCAL_BEFORE=$LITD1_LOCAL
+            LITD1_REMOTE_BEFORE=$LITD1_REMOTE
+            LITD2_LOCAL_BEFORE=$LITD2_LOCAL
+            LITD2_REMOTE_BEFORE=$LITD2_REMOTE
+            LND_LOCAL_BEFORE=$LND_LOCAL
+            LND_REMOTE_BEFORE=$LND_REMOTE
             
             # Get payment request from LNURL-P endpoint
             echo "Getting payment request from LNURL-P endpoint..."
@@ -1426,6 +1545,19 @@ jobs:
                   echo "   Expected: LNBITS1 +1000000, LNBITS2 -1000000+"
                   echo "   Actual:   LNBITS1 +$LNBITS1_DIFF, LNBITS2 -$LNBITS2_DIFF"
                   exit 1
+                fi
+
+                # Capture and verify channel balances after payment
+                capture_channel_balances "AFTER LNURL-P payment"
+
+                # Verify channel balance changes (convert msat to sats)
+                PAYMENT_SATS=$((LNBITS2_DIFF / 1000))
+                verify_channel_balance_changes "$PAYMENT_SATS" "litd-2" "litd-1"
+
+                # Check for any pending HTLCs
+                if [ "$LITD1_PENDING" -gt 0 ] || [ "$LITD2_PENDING" -gt 0 ] || [ "$LND_PENDING" -gt 0 ]; then
+                  echo "⚠️ WARNING: Pending HTLCs detected after payment settlement!"
+                  echo "  This may indicate incomplete payment routing"
                 fi
               else
                 echo "❌ LNURL-P payment failed: $PAYMENT"
@@ -1513,6 +1645,15 @@ jobs:
             LNBITS2_BEFORE=$(curl -s "http://localhost:5002/api/v1/wallet" -H "X-Api-Key: $LNBITS2_INVOICE_KEY" | jq -r '.balance')
             echo "   LNBITS1 (withdraw from): $LNBITS1_BEFORE msat"
             echo "   LNBITS2 (receive to):    $LNBITS2_BEFORE msat"
+
+            # Capture channel balances before withdraw
+            capture_channel_balances "BEFORE withdraw"
+            LITD1_LOCAL_BEFORE=$LITD1_LOCAL
+            LITD1_REMOTE_BEFORE=$LITD1_REMOTE
+            LITD2_LOCAL_BEFORE=$LITD2_LOCAL
+            LITD2_REMOTE_BEFORE=$LITD2_REMOTE
+            LND_LOCAL_BEFORE=$LND_LOCAL
+            LND_REMOTE_BEFORE=$LND_REMOTE
             
             # Create invoice on LNBITS2 to receive the withdrawal
             echo "Creating invoice on LNBITS2 to receive withdrawal..."
@@ -1564,6 +1705,18 @@ jobs:
                     echo "   Expected: LNBITS1 decreased, LNBITS2 increased by ~1000 msat"
                     echo "   Actual:   LNBITS1 -$LNBITS1_DIFF, LNBITS2 +$LNBITS2_DIFF"
                     exit 1
+                  fi
+
+                  # Capture and verify channel balances after withdraw
+                  capture_channel_balances "AFTER withdraw"
+
+                  # Verify channel balance changes (convert msat to sats)
+                  WITHDRAW_SATS=$((LNBITS1_DIFF / 1000))
+                  verify_channel_balance_changes "$WITHDRAW_SATS" "litd-1" "litd-2"
+
+                  # Verify no stuck HTLCs
+                  if [ "$LITD1_PENDING" -gt 0 ] || [ "$LITD2_PENDING" -gt 0 ] || [ "$LND_PENDING" -gt 0 ]; then
+                    echo "⚠️ WARNING: Pending HTLCs detected after withdraw!"
                   fi
                 else
                   echo "❌ Withdraw callback failed: $STATUS"
@@ -1723,7 +1876,23 @@ jobs:
         echo -e "\n=========================================="
         echo "Test 1: Payment from LNBITS1 (litd-1) to LNBITS2 (litd-2)"
         echo "=========================================="
-        
+
+        # Check balances before first payment
+        echo "💰 Checking wallet balances BEFORE payment 1..."
+        LNBITS1_BEFORE_1=$(curl -s "http://localhost:5001/api/v1/wallet" -H "X-API-KEY: $LNBITS1_INVOICE_KEY" | jq -r '.balance')
+        LNBITS2_BEFORE_1=$(curl -s "http://localhost:5002/api/v1/wallet" -H "X-API-KEY: $LNBITS2_INVOICE_KEY" | jq -r '.balance')
+        echo "   LNBITS1: $LNBITS1_BEFORE_1 msat"
+        echo "   LNBITS2: $LNBITS2_BEFORE_1 msat"
+
+        # Capture channel balances before first payment
+        capture_channel_balances "BEFORE cross-instance payment 1"
+        LITD1_LOCAL_BEFORE_1=$LITD1_LOCAL
+        LITD1_REMOTE_BEFORE_1=$LITD1_REMOTE
+        LITD2_LOCAL_BEFORE_1=$LITD2_LOCAL
+        LITD2_REMOTE_BEFORE_1=$LITD2_REMOTE
+        LND_LOCAL_BEFORE_1=$LND_LOCAL
+        LND_REMOTE_BEFORE_1=$LND_REMOTE
+
         # Create invoice on LNBITS2
         echo "Creating invoice on LNBITS2 for 5000 sats..."
         INVOICE2=$(curl -s -X POST "http://localhost:5002/api/v1/payments" \
@@ -1744,6 +1913,24 @@ jobs:
           
           if echo "$PAYMENT" | jq -e '.payment_hash' > /dev/null 2>&1; then
             echo "✅ Payment successful from LNBITS1 to LNBITS2!"
+
+            # Wait for payment to settle and check balances
+            sleep 2
+            echo "💰 Checking wallet balances AFTER payment 1..."
+            LNBITS1_AFTER_1=$(curl -s "http://localhost:5001/api/v1/wallet" -H "X-API-KEY: $LNBITS1_INVOICE_KEY" | jq -r '.balance')
+            LNBITS2_AFTER_1=$(curl -s "http://localhost:5002/api/v1/wallet" -H "X-API-KEY: $LNBITS2_INVOICE_KEY" | jq -r '.balance')
+            echo "   LNBITS1: $LNBITS1_AFTER_1 msat (was $LNBITS1_BEFORE_1)"
+            echo "   LNBITS2: $LNBITS2_AFTER_1 msat (was $LNBITS2_BEFORE_1)"
+
+            # Calculate differences
+            LNBITS1_DIFF_1=$((LNBITS1_BEFORE_1 - LNBITS1_AFTER_1))
+            LNBITS2_DIFF_1=$((LNBITS2_AFTER_1 - LNBITS2_BEFORE_1))
+            echo "💸 Payment 1 movement: LNBITS1 sent $LNBITS1_DIFF_1 msat, LNBITS2 received $LNBITS2_DIFF_1 msat"
+
+            # Capture and verify channel balances
+            capture_channel_balances "AFTER cross-instance payment 1"
+            PAYMENT_1_SATS=$((LNBITS1_DIFF_1 / 1000))
+            verify_channel_balance_changes "$PAYMENT_1_SATS" "litd-1" "litd-2"
           else
             echo "❌ Payment failed from LNBITS1 to LNBITS2"
             echo "   Payment response: $PAYMENT"
@@ -1759,7 +1946,23 @@ jobs:
         echo -e "\n=========================================="
         echo "Test 2: Payment from LNBITS2 (litd-2) to LNBITS3 (lnd)"
         echo "=========================================="
-        
+
+        # Check balances before second payment
+        echo "💰 Checking wallet balances BEFORE payment 2..."
+        LNBITS2_BEFORE_2=$(curl -s "http://localhost:5002/api/v1/wallet" -H "X-API-KEY: $LNBITS2_INVOICE_KEY" | jq -r '.balance')
+        LNBITS3_BEFORE_2=$(curl -s "http://localhost:5003/api/v1/wallet" -H "X-API-KEY: $LNBITS3_INVOICE_KEY" | jq -r '.balance')
+        echo "   LNBITS2: $LNBITS2_BEFORE_2 msat"
+        echo "   LNBITS3: $LNBITS3_BEFORE_2 msat"
+
+        # Capture channel balances before second payment
+        capture_channel_balances "BEFORE cross-instance payment 2"
+        LITD1_LOCAL_BEFORE_2=$LITD1_LOCAL
+        LITD1_REMOTE_BEFORE_2=$LITD1_REMOTE
+        LITD2_LOCAL_BEFORE_2=$LITD2_LOCAL
+        LITD2_REMOTE_BEFORE_2=$LITD2_REMOTE
+        LND_LOCAL_BEFORE_2=$LND_LOCAL
+        LND_REMOTE_BEFORE_2=$LND_REMOTE
+
         # Create invoice on LNBITS3
         echo "Creating invoice on LNBITS3 for 3000 sats..."
         INVOICE3=$(curl -s -X POST "http://localhost:5003/api/v1/payments" \
@@ -1780,6 +1983,24 @@ jobs:
           
           if echo "$PAYMENT" | jq -e '.payment_hash' > /dev/null 2>&1; then
             echo "✅ Payment successful from LNBITS2 to LNBITS3!"
+
+            # Wait for payment to settle and check balances
+            sleep 2
+            echo "💰 Checking wallet balances AFTER payment 2..."
+            LNBITS2_AFTER_2=$(curl -s "http://localhost:5002/api/v1/wallet" -H "X-API-KEY: $LNBITS2_INVOICE_KEY" | jq -r '.balance')
+            LNBITS3_AFTER_2=$(curl -s "http://localhost:5003/api/v1/wallet" -H "X-API-KEY: $LNBITS3_INVOICE_KEY" | jq -r '.balance')
+            echo "   LNBITS2: $LNBITS2_AFTER_2 msat (was $LNBITS2_BEFORE_2)"
+            echo "   LNBITS3: $LNBITS3_AFTER_2 msat (was $LNBITS3_BEFORE_2)"
+
+            # Calculate differences
+            LNBITS2_DIFF_2=$((LNBITS2_BEFORE_2 - LNBITS2_AFTER_2))
+            LNBITS3_DIFF_2=$((LNBITS3_AFTER_2 - LNBITS3_BEFORE_2))
+            echo "💸 Payment 2 movement: LNBITS2 sent $LNBITS2_DIFF_2 msat, LNBITS3 received $LNBITS3_DIFF_2 msat"
+
+            # Capture and verify channel balances
+            capture_channel_balances "AFTER cross-instance payment 2"
+            PAYMENT_2_SATS=$((LNBITS2_DIFF_2 / 1000))
+            verify_channel_balance_changes "$PAYMENT_2_SATS" "litd-2" "lnd"
           else
             echo "❌ Payment failed from LNBITS2 to LNBITS3"
             echo "   Payment response: $PAYMENT"
@@ -1795,7 +2016,23 @@ jobs:
         echo -e "\n=========================================="
         echo "Test 3: Payment from LNBITS3 (lnd) to LNBITS1 (litd-1)"
         echo "=========================================="
-        
+
+        # Check balances before third payment
+        echo "💰 Checking wallet balances BEFORE payment 3..."
+        LNBITS3_BEFORE_3=$(curl -s "http://localhost:5003/api/v1/wallet" -H "X-API-KEY: $LNBITS3_INVOICE_KEY" | jq -r '.balance')
+        LNBITS1_BEFORE_3=$(curl -s "http://localhost:5001/api/v1/wallet" -H "X-API-KEY: $LNBITS1_INVOICE_KEY" | jq -r '.balance')
+        echo "   LNBITS3: $LNBITS3_BEFORE_3 msat"
+        echo "   LNBITS1: $LNBITS1_BEFORE_3 msat"
+
+        # Capture channel balances before third payment
+        capture_channel_balances "BEFORE cross-instance payment 3"
+        LITD1_LOCAL_BEFORE_3=$LITD1_LOCAL
+        LITD1_REMOTE_BEFORE_3=$LITD1_REMOTE
+        LITD2_LOCAL_BEFORE_3=$LITD2_LOCAL
+        LITD2_REMOTE_BEFORE_3=$LITD2_REMOTE
+        LND_LOCAL_BEFORE_3=$LND_LOCAL
+        LND_REMOTE_BEFORE_3=$LND_REMOTE
+
         # Create invoice on LNBITS1
         echo "Creating invoice on LNBITS1 for 2000 sats..."
         INVOICE1=$(curl -s -X POST "http://localhost:5001/api/v1/payments" \
@@ -1816,6 +2053,24 @@ jobs:
           
           if echo "$PAYMENT" | jq -e '.payment_hash' > /dev/null 2>&1; then
             echo "✅ Payment successful from LNBITS3 to LNBITS1!"
+
+            # Wait for payment to settle and check balances
+            sleep 2
+            echo "💰 Checking wallet balances AFTER payment 3..."
+            LNBITS3_AFTER_3=$(curl -s "http://localhost:5003/api/v1/wallet" -H "X-API-KEY: $LNBITS3_INVOICE_KEY" | jq -r '.balance')
+            LNBITS1_AFTER_3=$(curl -s "http://localhost:5001/api/v1/wallet" -H "X-API-KEY: $LNBITS1_INVOICE_KEY" | jq -r '.balance')
+            echo "   LNBITS3: $LNBITS3_AFTER_3 msat (was $LNBITS3_BEFORE_3)"
+            echo "   LNBITS1: $LNBITS1_AFTER_3 msat (was $LNBITS1_BEFORE_3)"
+
+            # Calculate differences
+            LNBITS3_DIFF_3=$((LNBITS3_BEFORE_3 - LNBITS3_AFTER_3))
+            LNBITS1_DIFF_3=$((LNBITS1_AFTER_3 - LNBITS1_BEFORE_3))
+            echo "💸 Payment 3 movement: LNBITS3 sent $LNBITS3_DIFF_3 msat, LNBITS1 received $LNBITS1_DIFF_3 msat"
+
+            # Capture and verify channel balances
+            capture_channel_balances "AFTER cross-instance payment 3"
+            PAYMENT_3_SATS=$((LNBITS3_DIFF_3 / 1000))
+            verify_channel_balance_changes "$PAYMENT_3_SATS" "lnd" "litd-1"
           else
             echo "❌ Payment failed from LNBITS3 to LNBITS1"
             echo "   Payment response: $PAYMENT"
@@ -1848,7 +2103,35 @@ jobs:
           fi
         done
         
+        # Final comprehensive channel analysis
+        echo -e "\n=========================================="
+        echo "Final Channel Health Report"
+        echo "=========================================="
+        capture_channel_balances "FINAL STATE after all cross-instance payments"
+
+        # Summary of all transfers
+        echo -e "\n💸 Transaction Summary:"
+        echo "  Payment 1: LNBITS1 → LNBITS2 (5000 sats)"
+        echo "  Payment 2: LNBITS2 → LNBITS3 (3000 sats)"
+        echo "  Payment 3: LNBITS3 → LNBITS1 (2000 sats)"
+
+        # Channel utilization analysis
+        echo -e "\n📈 Channel Utilization Analysis:"
+        if [ -n "$LITD1_CAPACITY" ] && [ "$LITD1_CAPACITY" -gt 0 ]; then
+          LITD1_UTIL=$((LITD1_LOCAL * 100 / LITD1_CAPACITY))
+          echo "  litd-1: ${LITD1_UTIL}% local utilization"
+        fi
+        if [ -n "$LITD2_CAPACITY" ] && [ "$LITD2_CAPACITY" -gt 0 ]; then
+          LITD2_UTIL=$((LITD2_LOCAL * 100 / LITD2_CAPACITY))
+          echo "  litd-2: ${LITD2_UTIL}% local utilization"
+        fi
+        if [ -n "$LND_CAPACITY" ] && [ "$LND_CAPACITY" -gt 0 ]; then
+          LND_UTIL=$((LND_LOCAL * 100 / LND_CAPACITY))
+          echo "  lnd:    ${LND_UTIL}% local utilization"
+        fi
+
         echo -e "\n✅ Cross-instance payment tests complete!"
+        echo "🎉 All LNbits wallet balances and Lightning channel states verified!"
 
     - name: Cleanup
       if: always()
