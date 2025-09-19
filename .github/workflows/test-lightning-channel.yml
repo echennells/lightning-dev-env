@@ -1077,8 +1077,13 @@ jobs:
           # Wait for extension installation to complete
           sleep 3
 
+          # Debug: List LNbits directory structure to understand where extensions go
+          echo "Debugging LNbits directory structure:"
+          sudo find /home/ubuntu/lnbits -name "*extension*" -type d 2>/dev/null | head -10 || echo "No extension directories found"
+          sudo find /home/ubuntu/lnbits -name "taproot*" 2>/dev/null | head -10 || echo "No taproot files found"
+
           # Find where LNbits installed the extension and create proper config
-          EXTENSION_DIR=$(sudo find /home/ubuntu/lnbits -name "taproot_assets" -type d 2>/dev/null | head -1)
+          EXTENSION_DIR=$(sudo find /home/ubuntu -name "taproot_assets" -type d 2>/dev/null | head -1)
           if [ -n "$EXTENSION_DIR" ]; then
             echo "Found extension directory: $EXTENSION_DIR"
 
@@ -1086,9 +1091,9 @@ jobs:
             echo "# Taproot Assets Extension Configuration for CI (regtest)" | sudo tee "$EXTENSION_DIR/taproot_assets.conf" > /dev/null
             echo "TAPD_HOST=localhost:10009" | sudo tee -a "$EXTENSION_DIR/taproot_assets.conf" > /dev/null
             echo "TAPD_NETWORK=regtest" | sudo tee -a "$EXTENSION_DIR/taproot_assets.conf" > /dev/null
-            echo "TAPD_TLS_CERT_PATH=/home/ubuntu/lightning-dev-env/docker-compose/data/litd-1/.lnd/tls.cert" | sudo tee -a "$EXTENSION_DIR/taproot_assets.conf" > /dev/null
-            echo "TAPD_MACAROON_PATH=/home/ubuntu/lightning-dev-env/docker-compose/data/litd-1/.tapd/data/regtest/admin.macaroon" | sudo tee -a "$EXTENSION_DIR/taproot_assets.conf" > /dev/null
-            echo "LND_REST_MACAROON=/home/ubuntu/lightning-dev-env/docker-compose/data/litd-1/.lnd/data/chain/bitcoin/regtest/admin.macaroon" | sudo tee -a "$EXTENSION_DIR/taproot_assets.conf" > /dev/null
+            echo "TAPD_TLS_CERT_PATH=/home/ubuntu/lightning-dev-env/data/litd-1/tls.cert" | sudo tee -a "$EXTENSION_DIR/taproot_assets.conf" > /dev/null
+            echo "TAPD_MACAROON_PATH=/home/ubuntu/lightning-dev-env/data/tapd-1/data/regtest/admin.macaroon" | sudo tee -a "$EXTENSION_DIR/taproot_assets.conf" > /dev/null
+            echo "LND_REST_MACAROON=/home/ubuntu/lightning-dev-env/data/litd-1/data/chain/bitcoin/regtest/admin.macaroon" | sudo tee -a "$EXTENSION_DIR/taproot_assets.conf" > /dev/null
             echo "TAPD_DEFAULT_SAT_FEE=1" | sudo tee -a "$EXTENSION_DIR/taproot_assets.conf" > /dev/null
             echo "✅ CI-specific configuration created for extension"
           else
@@ -1097,9 +1102,9 @@ jobs:
 
           # Verify config file paths exist
           echo "Verifying configuration file paths..."
-          ls -la /home/ubuntu/lightning-dev-env/docker-compose/data/litd-1/.lnd/tls.cert 2>/dev/null && echo "✅ TLS cert found" || echo "❌ TLS cert missing"
-          ls -la /home/ubuntu/lightning-dev-env/docker-compose/data/litd-1/.tapd/data/regtest/admin.macaroon 2>/dev/null && echo "✅ TAPD macaroon found" || echo "❌ TAPD macaroon missing"
-          ls -la /home/ubuntu/lightning-dev-env/docker-compose/data/litd-1/.lnd/data/chain/bitcoin/regtest/admin.macaroon 2>/dev/null && echo "✅ LND macaroon found" || echo "❌ LND macaroon missing"
+          ls -la /home/ubuntu/lightning-dev-env/data/litd-1/tls.cert 2>/dev/null && echo "✅ TLS cert found" || echo "❌ TLS cert missing"
+          ls -la /home/ubuntu/lightning-dev-env/data/tapd-1/data/regtest/admin.macaroon 2>/dev/null && echo "✅ TAPD macaroon found" || echo "❌ TAPD macaroon missing"
+          ls -la /home/ubuntu/lightning-dev-env/data/litd-1/data/chain/bitcoin/regtest/admin.macaroon 2>/dev/null && echo "✅ LND macaroon found" || echo "❌ LND macaroon missing"
 
           curl -k -s -X PUT "https://localhost:$PROXY_PORT/api/v1/extension/taproot_assets/activate" -H "Authorization: Bearer $ACCESS_TOKEN" > /dev/null 2>&1 || true
           sleep 2  # Give configuration time to be read
