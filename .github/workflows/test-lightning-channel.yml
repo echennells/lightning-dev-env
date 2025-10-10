@@ -1013,7 +1013,7 @@ jobs:
           USER_ID=$(echo "$USER_INFO" | jq -r '.id')
           echo "✅ Admin key for $NAME: ${ADMIN_KEY:0:20}..."
           
-          # Configure Extension Sources to include lnurlFlip manifest
+          # Configure Extension Sources to include custom extension manifests
           echo "Configuring Extension Sources for $NAME..."
           curl -k -s -X PUT "https://localhost:$PROXY_PORT/admin/api/v1/settings" \
             -H "Content-Type: application/json" \
@@ -1021,7 +1021,9 @@ jobs:
             -d '{
               "lnbits_extensions_manifests": [
                 "https://raw.githubusercontent.com/lnbits/lnbits-extensions/main/extensions.json",
-                "https://raw.githubusercontent.com/echennells/lnurlFlip/main/manifest.json"
+                "https://raw.githubusercontent.com/echennells/lnurlFlip/main/manifest.json",
+                "https://raw.githubusercontent.com/echennells/taproot_assets/main/manifest.json",
+                "https://raw.githubusercontent.com/echennells/bitcoinswitch/merge/upstream-with-taproot/manifest.json"
               ]
             }' > /dev/null
           echo "✅ Extension Sources configured for $NAME"
@@ -1115,6 +1117,25 @@ jobs:
           echo "Taproot Assets extension status: $EXT_STATUS_AFTER"
 
           echo "✅ Taproot Assets extension configured and setup attempted on $NAME"
+
+          # Install Bitcoin Switch extension for bug detection testing
+          echo "Installing Bitcoin Switch extension on $NAME..."
+          BITCOINSWITCH_INSTALL_RESP=$(curl -k -s -X POST https://localhost:$PROXY_PORT/api/v1/extension \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $ACCESS_TOKEN" \
+            -d '{"ext_id": "bitcoinswitch", "archive": "https://api.github.com/repos/echennells/bitcoinswitch/zipball/v1.1.2", "source_repo": "echennells/bitcoinswitch", "version": "v1.1.2"}' 2>/dev/null || echo "Extension install attempted")
+
+          sleep 3
+
+          curl -k -s -X PUT "https://localhost:$PROXY_PORT/api/v1/extension/bitcoinswitch/activate" -H "Authorization: Bearer $ACCESS_TOKEN" > /dev/null 2>&1 || true
+          sleep 2
+          curl -k -s -X PUT "https://localhost:$PROXY_PORT/api/v1/extension/bitcoinswitch/enable" -H "Authorization: Bearer $ACCESS_TOKEN" > /dev/null 2>&1 || true
+
+          # Check extension status after configuration
+          BITCOINSWITCH_STATUS=$(curl -k -s "https://localhost:$PROXY_PORT/api/v1/extensions" -H "Authorization: Bearer $ACCESS_TOKEN" | jq -r '.extensions[]? | select(.id=="bitcoinswitch")? | .active?' 2>/dev/null || echo "unknown")
+          echo "Bitcoin Switch extension status: $BITCOINSWITCH_STATUS"
+
+          echo "✅ Bitcoin Switch extension configured and setup attempted on $NAME"
 
           # Create test links to prepare for later testing
           echo "Creating test links for later testing..."
