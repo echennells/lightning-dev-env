@@ -1,0 +1,103 @@
+name: Test Taproot Assets
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  test-taproot-assets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y jq sqlite3 curl
+
+    - name: Make scripts executable
+      run: |
+        chmod +x bootstrap-with-taproot-assets.sh
+        chmod +x test-suite.sh
+
+    - name: Bootstrap Taproot Assets environment
+      run: |
+        echo "=========================================="
+        echo "🚀 Starting Taproot Assets Bootstrap"
+        echo "=========================================="
+        ./bootstrap-with-taproot-assets.sh 2>&1 | tee /tmp/bootstrap-output.log
+
+    - name: Wait for services to stabilize
+      run: |
+        echo "Waiting 10 seconds for all services to fully stabilize..."
+        sleep 10
+
+    - name: Run Taproot Assets test suite
+      run: |
+        echo "=========================================="
+        echo "🧪 Running Test Suite"
+        echo "=========================================="
+        ./test-suite.sh
+
+    - name: Show container status on failure
+      if: failure()
+      run: |
+        echo "=========================================="
+        echo "📊 Container Status"
+        echo "=========================================="
+        docker compose ps
+
+    - name: Show bootstrap logs on failure
+      if: failure()
+      run: |
+        echo "=========================================="
+        echo "📋 Bootstrap Logs"
+        echo "=========================================="
+        cat /tmp/bootstrap-output.log || echo "No bootstrap log found"
+
+    - name: Show bitcoind logs on failure
+      if: failure()
+      run: |
+        echo "=========================================="
+        echo "🪙 Bitcoind Logs (last 100 lines)"
+        echo "=========================================="
+        docker compose logs --tail=100 bitcoind
+
+    - name: Show litd-1 logs on failure
+      if: failure()
+      run: |
+        echo "=========================================="
+        echo "⚡ LitD-1 Logs (last 100 lines)"
+        echo "=========================================="
+        docker compose logs --tail=100 litd-1
+
+    - name: Show litd-2 logs on failure
+      if: failure()
+      run: |
+        echo "=========================================="
+        echo "⚡ LitD-2 Logs (last 100 lines)"
+        echo "=========================================="
+        docker compose logs --tail=100 litd-2
+
+    - name: Show lnbits-2 logs on failure
+      if: failure()
+      run: |
+        echo "=========================================="
+        echo "💰 LNbits-2 Logs (last 100 lines)"
+        echo "=========================================="
+        docker compose logs --tail=100 lnbits-2
+
+    - name: Cleanup
+      if: always()
+      run: |
+        echo "=========================================="
+        echo "🧹 Cleaning up"
+        echo "=========================================="
+        docker compose down -v
+        sudo rm -rf .lnd-data-* .tapd-data-* data/
