@@ -1,0 +1,18 @@
+{
+  "name": "Taproot Assets",
+  "version": "0.1",
+  "short_description": "Manage Taproot Assets on the Bitcoin network",
+  "icon": "static/image/taproot-assets-icon.png",
+  "code": "taproot_assets",
+  "min_lnbits_version": "1.0.0",
+  "contributors": [
+    {
+      "name": "Eric Chennells",
+      "uri": "https://github.com/echennells",
+      "role": "Contributor"
+    }
+  ],
+  "description_md": "https://raw.githubusercontent.com/echennells/taproot_assets/main/description.md",
+  "license": "MIT"
+    
+}
