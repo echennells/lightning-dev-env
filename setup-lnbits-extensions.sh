@@ -34,8 +34,12 @@ setup_lnbits_instance() {
   echo "Copying Taproot Assets extension..."
   docker cp taproot_assets "$LNBITS_CONTAINER:/app/lnbits/extensions/"
 
-  echo "Copying Bitcoin Switch extension..."
-  docker cp ../bitcoinswitch "$LNBITS_CONTAINER:/app/lnbits/extensions/"
+  if [ -d "../bitcoinswitch" ]; then
+    echo "Copying Bitcoin Switch extension..."
+    docker cp ../bitcoinswitch "$LNBITS_CONTAINER:/app/lnbits/extensions/"
+  else
+    echo "⚠️  Bitcoin Switch extension not found, skipping..."
+  fi
 
   # Extract gRPC files
   echo "Extracting gRPC files..."
@@ -124,17 +128,29 @@ setup_lnbits_instance() {
   echo "Enabling extensions in database..."
   docker cp "$LNBITS_CONTAINER:/app/data/database.sqlite3" /tmp/enable-extensions-$LITD_NAME.db
 
+  # Always install taproot_assets
   sqlite3 /tmp/enable-extensions-$LITD_NAME.db << SQL
--- Ensure extensions are in installed_extensions table
+-- Ensure Taproot Assets extension is installed
 INSERT OR REPLACE INTO installed_extensions (id, version, name, short_description, icon, active, meta) VALUES
-('taproot_assets', '0.1', 'Taproot Assets', 'Manage Taproot Assets on the Bitcoin network', '/taproot_assets/static/image/icon.png', 1, '{"installed_release": {"name": "taproot_assets", "version": "0.1", "archive": "local", "source_repo": "local"}}'),
+('taproot_assets', '0.1', 'Taproot Assets', 'Manage Taproot Assets on the Bitcoin network', '/taproot_assets/static/image/icon.png', 1, '{"installed_release": {"name": "taproot_assets", "version": "0.1", "archive": "local", "source_repo": "local"}}');
+
+-- Enable Taproot Assets for admin user
+INSERT OR REPLACE INTO extensions ("user", extension, active) VALUES
+('$ADMIN_USER_ID', 'taproot_assets', 1);
+SQL
+
+  # Install bitcoinswitch if it exists
+  if [ -d "../bitcoinswitch" ]; then
+    sqlite3 /tmp/enable-extensions-$LITD_NAME.db << SQL
+-- Ensure Bitcoin Switch extension is installed
+INSERT OR REPLACE INTO installed_extensions (id, version, name, short_description, icon, active, meta) VALUES
 ('bitcoinswitch', '1.1.1', 'Bitcoin Switch', 'Turn things on with bitcoin - now with Taproot Assets support', '/bitcoinswitch/static/image/icon.png', 1, '{"installed_release": {"name": "bitcoinswitch", "version": "1.1.1", "archive": "local", "source_repo": "local"}}');
 
--- Enable extensions for admin user
+-- Enable Bitcoin Switch for admin user
 INSERT OR REPLACE INTO extensions ("user", extension, active) VALUES
-('$ADMIN_USER_ID', 'taproot_assets', 1),
 ('$ADMIN_USER_ID', 'bitcoinswitch', 1);
 SQL
+  fi
 
   docker cp /tmp/enable-extensions-$LITD_NAME.db "$LNBITS_CONTAINER:/app/data/database.sqlite3"
   rm /tmp/enable-extensions-$LITD_NAME.db
