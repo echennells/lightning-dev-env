@@ -286,6 +286,165 @@ else
 fi
 
 # =============================================================================
+# TEST 6: Bitcoin Switch - Create Standard Switch
+# =============================================================================
+start_test "Bitcoin Switch - Create Standard Lightning Switch"
+
+# Copy fresh database for Bitcoin Switch tests
+docker cp lightning-dev-env-lnbits-2-1:/app/data/database.sqlite3 /tmp/lnbits2-test.db 2>/dev/null || true
+
+if [ -n "$LNBITS2_ADMIN_KEY" ]; then
+  # Get wallet ID from database
+  WALLET_ID=$(sqlite3 /tmp/lnbits2-test.db "SELECT id FROM wallets WHERE adminkey = '$LNBITS2_ADMIN_KEY' LIMIT 1;" 2>/dev/null || echo "")
+
+  if [ -z "$WALLET_ID" ] || [ "$WALLET_ID" = "null" ]; then
+    fail_test "Could not get wallet ID"
+  else
+    echo "Creating Bitcoin Switch..."
+    SWITCH_CREATE=$(curl -k -s -X POST "https://localhost:5443/bitcoinswitch/api/v1/bitcoinswitch" \
+      -H "X-Api-Key: $LNBITS2_ADMIN_KEY" \
+      -H "Content-Type: application/json" \
+      -d "{
+        \"title\": \"Test Switch\",
+        \"wallet\": \"$WALLET_ID\",
+        \"currency\": \"sat\",
+        \"switches\": [{
+          \"amount\": 100,
+          \"duration\": 30,
+          \"pin\": 1,
+          \"comment\": false,
+          \"variable\": false,
+          \"label\": \"Test Pin 1\"
+        }],
+        \"disabled\": false,
+        \"disposable\": false
+      }")
+
+    SWITCH_ID=$(echo "$SWITCH_CREATE" | jq -r '.id' 2>/dev/null)
+
+    if [ -n "$SWITCH_ID" ] && [ "$SWITCH_ID" != "null" ]; then
+      pass_test "Standard Bitcoin Switch created (ID: ${SWITCH_ID:0:8}...)"
+    else
+      fail_test "Failed to create Bitcoin Switch" "$SWITCH_CREATE"
+    fi
+  fi
+else
+  fail_test "Cannot test without admin key"
+fi
+
+# =============================================================================
+# TEST 7: Bitcoin Switch - Create Taproot Asset Switch
+# =============================================================================
+start_test "Bitcoin Switch - Create Taproot Asset-enabled Switch"
+
+if [ -n "$LNBITS2_ADMIN_KEY" ] && [ -n "$WALLET_ID" ]; then
+  echo "Creating Taproot Asset-enabled Switch..."
+  ASSET_SWITCH_CREATE=$(curl -k -s -X POST "https://localhost:5443/bitcoinswitch/api/v1/bitcoinswitch" \
+    -H "X-Api-Key: $LNBITS2_ADMIN_KEY" \
+    -H "Content-Type: application/json" \
+    -d "{
+      \"title\": \"Taproot Asset Switch\",
+      \"wallet\": \"$WALLET_ID\",
+      \"currency\": \"sat\",
+      \"switches\": [{
+        \"amount\": 200,
+        \"duration\": 60,
+        \"pin\": 2,
+        \"comment\": false,
+        \"variable\": false,
+        \"label\": \"Asset Pin 2\",
+        \"accepts_assets\": true,
+        \"accepted_asset_ids\": [\"$ASSET_ID\"]
+      }],
+      \"disabled\": false,
+      \"disposable\": false
+    }")
+
+  ASSET_SWITCH_ID=$(echo "$ASSET_SWITCH_CREATE" | jq -r '.id' 2>/dev/null)
+
+  if [ -n "$ASSET_SWITCH_ID" ] && [ "$ASSET_SWITCH_ID" != "null" ]; then
+    # Verify it accepts assets
+    ACCEPTS_ASSETS=$(echo "$ASSET_SWITCH_CREATE" | jq -r '.switches[0].accepts_assets' 2>/dev/null)
+    if [ "$ACCEPTS_ASSETS" = "true" ]; then
+      pass_test "Taproot Asset Switch created (ID: ${ASSET_SWITCH_ID:0:8}..., accepts assets)"
+    else
+      fail_test "Switch created but doesn't accept assets"
+    fi
+  else
+    fail_test "Failed to create Taproot Asset Switch" "$ASSET_SWITCH_CREATE"
+  fi
+else
+  fail_test "Cannot test without admin key and wallet ID"
+fi
+
+# =============================================================================
+# TEST 8: Bitcoin Switch - List Switches
+# =============================================================================
+start_test "Bitcoin Switch - List All Switches"
+
+if [ -n "$LNBITS2_ADMIN_KEY" ]; then
+  echo "Listing all switches..."
+  SWITCHES_LIST=$(curl -k -s "https://localhost:5443/bitcoinswitch/api/v1/bitcoinswitch" \
+    -H "X-Api-Key: $LNBITS2_ADMIN_KEY")
+
+  SWITCHES_COUNT=$(echo "$SWITCHES_LIST" | jq '. | length' 2>/dev/null || echo "0")
+
+  if [ "$SWITCHES_COUNT" -ge 2 ]; then
+    pass_test "Listed $SWITCHES_COUNT switches successfully"
+  else
+    fail_test "Expected at least 2 switches, found $SWITCHES_COUNT"
+  fi
+else
+  fail_test "Cannot test without admin key"
+fi
+
+# =============================================================================
+# TEST 9: Bitcoin Switch - Verify Switch Configuration
+# =============================================================================
+start_test "Bitcoin Switch - Verify Switch Configuration"
+
+if [ -n "$LNBITS2_ADMIN_KEY" ] && [ -n "$SWITCH_ID" ]; then
+  echo "Retrieving switch configuration..."
+  SWITCH_INFO=$(curl -k -s "https://localhost:5443/bitcoinswitch/api/v1/bitcoinswitch/$SWITCH_ID" \
+    -H "X-Api-Key: $LNBITS2_ADMIN_KEY")
+
+  # Verify switch has LNURL configured
+  LNURL=$(echo "$SWITCH_INFO" | jq -r '.switches[0].lnurl' 2>/dev/null)
+
+  if [ -n "$LNURL" ] && [ "$LNURL" != "null" ] && [[ "$LNURL" == LNURL* ]]; then
+    pass_test "Switch has valid LNURL configured: ${LNURL:0:20}..."
+  else
+    fail_test "Switch LNURL is invalid or missing"
+  fi
+else
+  fail_test "Cannot test without admin key and switch ID"
+fi
+
+# =============================================================================
+# TEST 10: Bitcoin Switch - Delete Switch
+# =============================================================================
+start_test "Bitcoin Switch - Delete Switch"
+
+if [ -n "$LNBITS2_ADMIN_KEY" ] && [ -n "$ASSET_SWITCH_ID" ]; then
+  echo "Deleting Taproot Asset switch..."
+  DELETE_RESPONSE=$(curl -k -s -X DELETE "https://localhost:5443/bitcoinswitch/api/v1/bitcoinswitch/$ASSET_SWITCH_ID" \
+    -H "X-Api-Key: $LNBITS2_ADMIN_KEY")
+
+  # Verify it's deleted by trying to get it
+  sleep 1
+  GET_DELETED=$(curl -k -s "https://localhost:5443/bitcoinswitch/api/v1/bitcoinswitch/$ASSET_SWITCH_ID" \
+    -H "X-Api-Key: $LNBITS2_ADMIN_KEY")
+
+  if echo "$GET_DELETED" | jq -e '.detail' | grep -qi "not found"; then
+    pass_test "Switch deleted successfully"
+  else
+    fail_test "Switch still exists after deletion"
+  fi
+else
+  fail_test "Cannot test without admin key and switch ID"
+fi
+
+# =============================================================================
 # TEST SUMMARY
 # =============================================================================
 echo ""

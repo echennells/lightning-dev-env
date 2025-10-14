@@ -1,6 +1,7 @@
 services:
   bitcoind:
     image: boltz/bitcoin-core:25.0
+    platform: linux/amd64
     hostname: bitcoind
     command:
       - -regtest
@@ -22,6 +23,7 @@ services:
 
   litd-1:
     image: lightninglabs/lightning-terminal:v0.14.1-alpha
+    platform: linux/amd64
     hostname: litd-1
     depends_on:
       - bitcoind
@@ -57,6 +59,7 @@ services:
       # Taproot Assets configuration
       - --taproot-assets-mode=integrated
       - --taproot-assets.network=regtest
+      - --taproot-assets.rpclisten=0.0.0.0:10029
       - --taproot-assets.universe.public-access=rw
       - --taproot-assets.allow-public-uni-proof-courier
       - --taproot-assets.universe.sync-all-assets
@@ -70,11 +73,13 @@ services:
     ports:
       - "8443:8443"  # Lightning Terminal UI
       - "10009:10009" # LND gRPC
-      - "8080:8080"   # LND REST
+      - "8083:8080"   # LND REST
       - "9735:9735"   # Lightning P2P
+      - "10029:10029" # Tapd gRPC
 
   litd-2:
     image: lightninglabs/lightning-terminal:v0.14.1-alpha
+    platform: linux/amd64
     hostname: litd-2
     depends_on:
       - bitcoind
@@ -109,6 +114,7 @@ services:
       # Taproot Assets configuration
       - --taproot-assets-mode=integrated
       - --taproot-assets.network=regtest
+      - --taproot-assets.rpclisten=0.0.0.0:10030
       - --taproot-assets.universe.public-access=rw
       - --taproot-assets.allow-public-uni-proof-courier
       - --taproot-assets.universe.sync-all-assets
@@ -122,11 +128,13 @@ services:
     ports:
       - "8444:8444"  # Lightning Terminal UI
       - "10010:10010" # LND gRPC
-      - "8081:8081"   # LND REST
+      - "8084:8081"   # LND REST
       - "9736:9736"   # Lightning P2P
+      - "10030:10030" # Tapd gRPC
 
   lnd:
     image: boltz/lnd:0.18.4-beta
+    platform: linux/amd64
     hostname: lnd
     depends_on:
       - bitcoind
@@ -150,11 +158,12 @@ services:
       - ./data/lnd:/root/.lnd/
     ports:
       - "10011:10011"
-      - "8082:8082"
+      - "8085:8082"
       - "9737:9737"
 
   lnbits-1:
     image: lnbits/lnbits:latest
+    platform: linux/amd64
     hostname: lnbits-1
     depends_on:
       - litd-1
@@ -173,7 +182,7 @@ services:
       - LNBITS_DEFAULT_WALLET_NAME=admin
       - SUPER_USER=d08a3313322a4514af75d488bcc27eee
       # LNBITS_EXTENSIONS_DEFAULT_INSTALL doesn't work in v1.2.1, use API instead
-      - LNBITS_BASEURL=https://localhost:5443
+      - LNBITS_BASEURL=https://lnbits.example.com:5443
       # Taproot Assets configuration for LNbits (if supported)
       - TAPD_HOST=litd-1:10009
       - TAPD_NETWORK=regtest
@@ -188,6 +197,7 @@ services:
 
   lnbits-2:
     image: lnbits/lnbits:latest
+    platform: linux/amd64
     hostname: lnbits-2
     depends_on:
       - litd-2
@@ -204,7 +214,7 @@ services:
       - LNBITS_ADMIN_UI=true
       - LNBITS_DEFAULT_WALLET_NAME=admin
       - SUPER_USER=e08a3313322a4514af75d488bcc27eef
-      - LNBITS_BASEURL=http://localhost:5002
+      - LNBITS_BASEURL=https://lnbits.example.com:5443
       # Taproot Assets configuration for LNbits (if supported)
       - TAPD_HOST=litd-2:10010
       - TAPD_NETWORK=regtest
@@ -219,6 +229,7 @@ services:
 
   lnbits-3:
     image: lnbits/lnbits:latest
+    platform: linux/amd64
     hostname: lnbits-3
     depends_on:
       - lnd
@@ -235,7 +246,7 @@ services:
       - LNBITS_ADMIN_UI=true
       - LNBITS_DEFAULT_WALLET_NAME=admin
       - SUPER_USER=f08a3313322a4514af75d488bcc27ee0
-      - LNBITS_BASEURL=http://localhost:5003
+      - LNBITS_BASEURL=https://lnbits.example.com:5443
     volumes:
       - lnbits-3-data:/app/data
       - ./data/lnd:/app/lnd:ro
@@ -245,6 +256,7 @@ services:
   # HTTPS proxy for LNbits (for LNURL compatibility in CI/CD)
   lnbits-https-proxy:
     image: nginx:alpine
+    platform: linux/amd64
     hostname: lnbits-https
     depends_on:
       - lnbits-1

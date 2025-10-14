@@ -5,16 +5,20 @@
 
 set -e
 
-# Configuration: Taproot Assets Extension
+# Configuration: Extensions
 TAPROOT_ASSETS_REPO="${TAPROOT_ASSETS_REPO:-https://github.com/echennells/taproot_assets}"
 TAPROOT_ASSETS_VERSION="${TAPROOT_ASSETS_VERSION:-main}"  # can be branch, tag, or commit
+BITCOINSWITCH_REPO="${BITCOINSWITCH_REPO:-https://github.com/echennells/bitcoinswitch}"
+BITCOINSWITCH_VERSION="${BITCOINSWITCH_VERSION:-main}"  # can be branch, tag, or commit
 
 echo "🚀 BOOTSTRAPPING FRESH LNBITS + LNURLFLIP + TAPROOT ASSETS ENVIRONMENT"
 echo "=============================================================="
 echo ""
-echo "📦 Taproot Assets Extension Configuration:"
-echo "   Repository: $TAPROOT_ASSETS_REPO"
-echo "   Version: $TAPROOT_ASSETS_VERSION"
+echo "📦 Extension Configuration:"
+echo "   Taproot Assets Repository: $TAPROOT_ASSETS_REPO"
+echo "   Taproot Assets Version: $TAPROOT_ASSETS_VERSION"
+echo "   Bitcoin Switch Repository: $BITCOINSWITCH_REPO"
+echo "   Bitcoin Switch Version: $BITCOINSWITCH_VERSION"
 echo ""
 
 # Clone or update Taproot Assets extension
@@ -33,6 +37,25 @@ else
   git checkout "$TAPROOT_ASSETS_VERSION"
   cd ..
   echo "✅ Taproot Assets extension cloned"
+fi
+
+# Clone or update Bitcoin Switch extension
+cd ..
+if [ -d "bitcoinswitch" ]; then
+  echo "Found existing bitcoinswitch directory. Updating to $BITCOINSWITCH_VERSION..."
+  cd bitcoinswitch
+  git fetch origin
+  git checkout "$BITCOINSWITCH_VERSION"
+  git pull origin "$BITCOINSWITCH_VERSION" 2>/dev/null || echo "Already up to date"
+  cd ../lightning-dev-env
+  echo "✅ Bitcoin Switch extension updated"
+else
+  echo "Cloning Bitcoin Switch extension..."
+  git clone "$BITCOINSWITCH_REPO" bitcoinswitch
+  cd bitcoinswitch
+  git checkout "$BITCOINSWITCH_VERSION"
+  cd ../lightning-dev-env
+  echo "✅ Bitcoin Switch extension cloned"
 fi
 echo ""
 
