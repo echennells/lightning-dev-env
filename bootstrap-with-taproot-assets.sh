@@ -5,8 +5,36 @@
 
 set -e
 
+# Configuration: Taproot Assets Extension
+TAPROOT_ASSETS_REPO="${TAPROOT_ASSETS_REPO:-https://github.com/echennells/taproot_assets}"
+TAPROOT_ASSETS_VERSION="${TAPROOT_ASSETS_VERSION:-main}"  # can be branch, tag, or commit
+
 echo "🚀 BOOTSTRAPPING FRESH LNBITS + LNURLFLIP + TAPROOT ASSETS ENVIRONMENT"
 echo "=============================================================="
+echo ""
+echo "📦 Taproot Assets Extension Configuration:"
+echo "   Repository: $TAPROOT_ASSETS_REPO"
+echo "   Version: $TAPROOT_ASSETS_VERSION"
+echo ""
+
+# Clone or update Taproot Assets extension
+if [ -d "taproot_assets" ]; then
+  echo "Found existing taproot_assets directory. Updating to $TAPROOT_ASSETS_VERSION..."
+  cd taproot_assets
+  git fetch origin
+  git checkout "$TAPROOT_ASSETS_VERSION"
+  git pull origin "$TAPROOT_ASSETS_VERSION" 2>/dev/null || echo "Already up to date"
+  cd ..
+  echo "✅ Taproot Assets extension updated"
+else
+  echo "Cloning Taproot Assets extension..."
+  git clone "$TAPROOT_ASSETS_REPO" taproot_assets
+  cd taproot_assets
+  git checkout "$TAPROOT_ASSETS_VERSION"
+  cd ..
+  echo "✅ Taproot Assets extension cloned"
+fi
+echo ""
 
 # Start containers
 echo "Starting Docker containers..."

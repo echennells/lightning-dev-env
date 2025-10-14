@@ -2,3 +2,4 @@ regtest-env/
 data/
 *.log
 .env
+taproot_assets/
