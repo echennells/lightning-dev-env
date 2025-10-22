@@ -9,5 +9,6 @@ test-results/
 *.patch
 *.bak
 lnbits-grpc-files/
+lnbits-*/
 ssl/*.crt
 ssl/*.key
