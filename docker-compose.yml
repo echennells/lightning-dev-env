@@ -166,7 +166,7 @@ services:
       - "9737:9737"
 
   lnbits-1:
-    image: ${LNBITS_IMAGE:-lnbits/lnbits:${LNBITS_VERSION:-v1.2.1}}
+    image: ${LNBITS_IMAGE:-lnbits/lnbits:${LNBITS_VERSION:-v1.3.0}}
     pull_policy: if_not_present
     platform: linux/amd64
     hostname: lnbits-1
@@ -187,7 +187,7 @@ services:
       - LNBITS_DEFAULT_WALLET_NAME=admin
       - SUPER_USER=d08a3313322a4514af75d488bcc27eee
       # LNBITS_EXTENSIONS_DEFAULT_INSTALL doesn't work in v1.2.1, use API instead
-      - LNBITS_BASEURL=https://lnbits.example.com:5443
+      - LNBITS_BASEURL=https://localhost:5443
       # Custom extension repositories
       # Taproot Assets configuration for LNbits (if supported)
       - TAPD_HOST=litd-1:10009
@@ -202,7 +202,7 @@ services:
       - "5001:5000"
 
   lnbits-2:
-    image: ${LNBITS_IMAGE:-lnbits/lnbits:${LNBITS_VERSION:-v1.2.1}}
+    image: ${LNBITS_IMAGE:-lnbits/lnbits:${LNBITS_VERSION:-v1.3.0}}
     pull_policy: if_not_present
     platform: linux/amd64
     hostname: lnbits-2
@@ -221,7 +221,7 @@ services:
       - LNBITS_ADMIN_UI=true
       - LNBITS_DEFAULT_WALLET_NAME=admin
       - SUPER_USER=e08a3313322a4514af75d488bcc27eef
-      - LNBITS_BASEURL=https://lnbits.example.com:5443
+      - LNBITS_BASEURL=https://localhost:5443
       # Custom extension repositories
       # Taproot Assets configuration for LNbits (if supported)
       - TAPD_HOST=litd-2:10010
@@ -236,7 +236,7 @@ services:
       - "5002:5000"
 
   lnbits-3:
-    image: ${LNBITS_IMAGE:-lnbits/lnbits:${LNBITS_VERSION:-v1.2.1}}
+    image: ${LNBITS_IMAGE:-lnbits/lnbits:${LNBITS_VERSION:-v1.3.0}}
     pull_policy: if_not_present
     platform: linux/amd64
     hostname: lnbits-3
@@ -255,7 +255,7 @@ services:
       - LNBITS_ADMIN_UI=true
       - LNBITS_DEFAULT_WALLET_NAME=admin
       - SUPER_USER=f08a3313322a4514af75d488bcc27ee0
-      - LNBITS_BASEURL=https://lnbits.example.com:5443
+      - LNBITS_BASEURL=https://localhost:5443
       # Custom extension repositories
     volumes:
       - lnbits-3-data:/app/data
@@ -276,6 +276,20 @@ services:
     volumes:
       - ./nginx-lnbits.conf:/etc/nginx/conf.d/default.conf:ro
       - ./ssl:/etc/ssl/certs:ro
+
+  # WebSocket client for Bitcoin Switch (simulates hardware connection)
+  bitcoinswitch-ws-client:
+    image: python:3.11-alpine
+    platform: linux/amd64
+    hostname: bitcoinswitch-ws
+    depends_on:
+      - lnbits-2
+    restart: unless-stopped
+    environment:
+      - BITCOIN_SWITCH_ID=${BITCOIN_SWITCH_ID:-}
+    command: sh -c "pip install websockets && python /app/bitcoinswitch-ws-client.py"
+    volumes:
+      - ./bitcoinswitch-ws-client.py:/app/bitcoinswitch-ws-client.py:ro
 
 volumes:
   bitcoin-data:

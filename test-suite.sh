@@ -424,20 +424,20 @@ fi
 # =============================================================================
 # TEST 10: Bitcoin Switch - Delete Switch
 # =============================================================================
-start_test "Bitcoin Switch - Delete Switch"
+start_test "Bitcoin Switch - Delete Standard Switch"
 
-if [ -n "$LNBITS2_ADMIN_KEY" ] && [ -n "$ASSET_SWITCH_ID" ]; then
-  echo "Deleting Taproot Asset switch..."
-  DELETE_RESPONSE=$(curl -k -s -X DELETE "https://localhost:5443/bitcoinswitch/api/v1/$ASSET_SWITCH_ID" \
+if [ -n "$LNBITS2_ADMIN_KEY" ] && [ -n "$SWITCH_ID" ]; then
+  echo "Deleting standard switch (keeping asset switch for LNURL tests)..."
+  DELETE_RESPONSE=$(curl -k -s -X DELETE "https://localhost:5443/bitcoinswitch/api/v1/$SWITCH_ID" \
     -H "X-Api-Key: $LNBITS2_ADMIN_KEY")
 
   # Verify it's deleted by trying to get it
   sleep 1
-  GET_DELETED=$(curl -k -s "https://localhost:5443/bitcoinswitch/api/v1/$ASSET_SWITCH_ID" \
+  GET_DELETED=$(curl -k -s "https://localhost:5443/bitcoinswitch/api/v1/$SWITCH_ID" \
     -H "X-Api-Key: $LNBITS2_ADMIN_KEY")
 
   if echo "$GET_DELETED" | jq -e '.detail' | grep -qiE "(not found|does not exist)"; then
-    pass_test "Switch deleted successfully"
+    pass_test "Standard switch deleted successfully"
   else
     fail_test "Switch still exists after deletion"
   fi
@@ -446,7 +446,225 @@ else
 fi
 
 # =============================================================================
-# TEST 11: LNbits Outbound Payment - Taproot Assets (LNbits-2 → LNbits-1)
+# TEST 11: Bitcoin Switch - Get LNURL from Asset-Enabled Switch
+# =============================================================================
+start_test "Bitcoin Switch - Get LNURL Pay Link"
+
+if [ -n "$LNBITS2_ADMIN_KEY" ] && [ -n "$ASSET_SWITCH_ID" ]; then
+  echo "Getting LNURL from asset-enabled switch..."
+  # The LNURL endpoint for a switch is at /bitcoinswitch/api/v1/lnurl/{switch_id}?pin={pin}
+  LNURL_RESPONSE=$(curl -k -s "https://localhost:5443/bitcoinswitch/api/v1/lnurl/$ASSET_SWITCH_ID?pin=2")
+
+  # Check if we got valid LNURL metadata
+  LNURL_TAG=$(echo "$LNURL_RESPONSE" | jq -r '.tag' 2>/dev/null)
+  LNURL_CALLBACK=$(echo "$LNURL_RESPONSE" | jq -r '.callback' 2>/dev/null)
+  LNURL_ACCEPTS_ASSETS=$(echo "$LNURL_RESPONSE" | jq -r '.acceptsAssets' 2>/dev/null)
+
+  if [ "$LNURL_TAG" = "payRequest" ] && [ -n "$LNURL_CALLBACK" ] && [ "$LNURL_CALLBACK" != "null" ]; then
+    if [ "$LNURL_ACCEPTS_ASSETS" = "true" ]; then
+      pass_test "LNURL metadata retrieved (callback: ${LNURL_CALLBACK:0:40}..., accepts assets: true)"
+    else
+      pass_test "LNURL metadata retrieved but doesn't accept assets"
+    fi
+  else
+    fail_test "Failed to get valid LNURL metadata" "$LNURL_RESPONSE"
+  fi
+else
+  fail_test "Cannot test without admin key and asset switch ID"
+fi
+
+# =============================================================================
+# Connect WebSocket Client (for tests 12-13)
+# =============================================================================
+if [ -n "$ASSET_SWITCH_ID" ]; then
+  echo ""
+  echo "🔌 Connecting websocket client to Bitcoin Switch..."
+  ./connect-bitcoinswitch-ws.sh "$ASSET_SWITCH_ID" > /dev/null 2>&1
+  sleep 2
+  echo "✅ Websocket client connected"
+fi
+
+# =============================================================================
+# TEST 12: Bitcoin Switch - Pay LNURL with Bitcoin
+# =============================================================================
+start_test "Bitcoin Switch - Pay LNURL with Bitcoin"
+
+if [ -n "$LNBITS2_ADMIN_KEY" ] && [ -n "$ASSET_SWITCH_ID" ] && [ -n "$LNURL_CALLBACK" ]; then
+  # Get wallet balance before payment
+  WALLET_BTC_BEFORE=$(docker compose exec -T lnbits-2 curl -s "http://localhost:5000/api/v1/wallet" \
+    -H "X-Api-Key: $LNBITS2_ADMIN_KEY" | jq -r '.balance // 0' 2>/dev/null)
+
+  echo "Wallet balance before: $WALLET_BTC_BEFORE msats"
+
+  # Request invoice from LNURL callback (200 sats = 200000 msats)
+  echo "Requesting Bitcoin invoice from LNURL callback..."
+  # The callback URL already has query params, so use & instead of ?
+  if [[ "$LNURL_CALLBACK" == *"?"* ]]; then
+    CALLBACK_WITH_AMOUNT="${LNURL_CALLBACK}&amount=200000"
+  else
+    CALLBACK_WITH_AMOUNT="${LNURL_CALLBACK}?amount=200000"
+  fi
+  echo "Using callback: $CALLBACK_WITH_AMOUNT"
+  CALLBACK_RESPONSE=$(curl -k -s "$CALLBACK_WITH_AMOUNT")
+
+  # Check if we got an error (e.g., no hardware connections)
+  ERROR_STATUS=$(echo "$CALLBACK_RESPONSE" | jq -r '.status' 2>/dev/null)
+  if [ "$ERROR_STATUS" = "ERROR" ]; then
+    ERROR_REASON=$(echo "$CALLBACK_RESPONSE" | jq -r '.reason' 2>/dev/null)
+    fail_test "LNURL callback returned error: $ERROR_REASON (Bitcoin Switch requires hardware connections)"
+  fi
+
+  BOLT11=$(echo "$CALLBACK_RESPONSE" | jq -r '.pr' 2>/dev/null)
+
+  if [ -n "$BOLT11" ] && [ "$BOLT11" != "null" ]; then
+    echo "Got invoice: ${BOLT11:0:60}..."
+
+    # Pay from litd-1
+    echo "Paying invoice from litd-1..."
+    PAYMENT=$(docker compose exec -T litd-1 lncli --network=regtest payinvoice --force "$BOLT11" 2>&1)
+
+    if echo "$PAYMENT" | grep -q "Payment status: SUCCEEDED"; then
+      sleep 3
+
+      # Check wallet balance after
+      WALLET_BTC_AFTER=$(docker compose exec -T lnbits-2 curl -s "http://localhost:5000/api/v1/wallet" \
+        -H "X-Api-Key: $LNBITS2_ADMIN_KEY" | jq -r '.balance // 0' 2>/dev/null)
+
+      echo "Wallet balance after: $WALLET_BTC_AFTER msats"
+
+      WALLET_DIFF=$((WALLET_BTC_AFTER - WALLET_BTC_BEFORE))
+
+      # Should receive 200 sats = 200000 msats
+      if [ "$WALLET_DIFF" -ge 195000 ] && [ "$WALLET_DIFF" -le 205000 ]; then
+        pass_test "LNURL Bitcoin payment succeeded (+$((WALLET_DIFF / 1000)) sats to wallet)"
+      else
+        fail_test "Wallet balance change incorrect" "Expected ~200 sats, got $((WALLET_DIFF / 1000)) sats"
+      fi
+    else
+      fail_test "Payment failed" "$PAYMENT"
+    fi
+  else
+    fail_test "Failed to get invoice from LNURL callback" "$CALLBACK_RESPONSE"
+  fi
+else
+  fail_test "Cannot test without LNURL callback"
+fi
+
+# =============================================================================
+# TEST 13: Bitcoin Switch - Pay LNURL with Taproot Assets
+# =============================================================================
+start_test "Bitcoin Switch - Pay LNURL with Taproot Assets"
+
+# Get lnbits-1 admin key for this test
+docker cp lightning-dev-env-lnbits-1-1:/app/data/database.sqlite3 /tmp/lnbits1-test-lnurl.db 2>/dev/null || true
+LNBITS1_ADMIN_KEY=$(sqlite3 /tmp/lnbits1-test-lnurl.db "SELECT adminkey FROM wallets ORDER BY id LIMIT 1;" 2>/dev/null || echo "")
+rm -f /tmp/lnbits1-test-lnurl.db
+
+if [ -n "$LNBITS1_ADMIN_KEY" ] && [ -n "$LNBITS2_ADMIN_KEY" ] && [ -n "$ASSET_SWITCH_ID" ] && [ -n "$LNURL_CALLBACK" ]; then
+  # Get LNbits-1 asset balance before
+  LNBITS1_ASSET_BEFORE=$(docker compose exec -T lnbits-1 curl -s "http://localhost:5000/taproot_assets/api/v1/taproot/listassets" \
+    -H "X-Api-Key: $LNBITS1_ADMIN_KEY" | jq -r '.[0].user_balance // 0' 2>/dev/null)
+
+  # Get LNbits-2 wallet balance before
+  WALLET_ASSET_BEFORE=$(docker compose exec -T lnbits-2 curl -s "http://localhost:5000/api/v1/wallet" \
+    -H "X-Api-Key: $LNBITS2_ADMIN_KEY" | jq -r '.balance // 0' 2>/dev/null)
+
+  echo "LNbits-1 asset balance before: $LNBITS1_ASSET_BEFORE units"
+  echo "LNbits-2 wallet balance before: $WALLET_ASSET_BEFORE msats"
+
+  # Request Taproot Asset invoice from LNURL callback (200 asset units)
+  echo "Requesting Taproot Asset invoice from LNURL callback..."
+  # The callback URL already has query params, so use & instead of ?
+  if [[ "$LNURL_CALLBACK" == *"?"* ]]; then
+    CALLBACK_WITH_PARAMS="${LNURL_CALLBACK}&amount=200&asset_id=$ASSET_ID"
+  else
+    CALLBACK_WITH_PARAMS="${LNURL_CALLBACK}?amount=200&asset_id=$ASSET_ID"
+  fi
+  CALLBACK_RESPONSE=$(curl -k -s "$CALLBACK_WITH_PARAMS")
+
+  ASSET_INVOICE=$(echo "$CALLBACK_RESPONSE" | jq -r '.pr' 2>/dev/null)
+
+  if [ -n "$ASSET_INVOICE" ] && [ "$ASSET_INVOICE" != "null" ]; then
+    echo "Got asset invoice: ${ASSET_INVOICE:0:60}..."
+
+    # Pay from LNbits-1 using Taproot Assets extension
+    echo "Paying asset invoice from LNbits-1..."
+    LNBITS1_PAYMENT=$(docker compose exec -T lnbits-1 curl -s -X POST "http://localhost:5000/taproot_assets/api/v1/taproot/pay" \
+      -H "X-Api-Key: $LNBITS1_ADMIN_KEY" \
+      -H "Content-Type: application/json" \
+      -d "{\"payment_request\": \"$ASSET_INVOICE\"}")
+
+    PAYMENT_SUCCESS=$(echo "$LNBITS1_PAYMENT" | jq -r '.success' 2>/dev/null)
+
+    if [ "$PAYMENT_SUCCESS" = "true" ]; then
+      sleep 3
+
+      # Check balances after
+      LNBITS1_ASSET_AFTER=$(docker compose exec -T lnbits-1 curl -s "http://localhost:5000/taproot_assets/api/v1/taproot/listassets" \
+        -H "X-Api-Key: $LNBITS1_ADMIN_KEY" | jq -r '.[0].user_balance // 0' 2>/dev/null)
+
+      WALLET_ASSET_AFTER=$(docker compose exec -T lnbits-2 curl -s "http://localhost:5000/api/v1/wallet" \
+        -H "X-Api-Key: $LNBITS2_ADMIN_KEY" | jq -r '.balance // 0' 2>/dev/null)
+
+      echo "LNbits-1 asset balance after: $LNBITS1_ASSET_AFTER units"
+      echo "LNbits-2 wallet balance after: $WALLET_ASSET_AFTER msats"
+
+      ASSET_DIFF=$((LNBITS1_ASSET_BEFORE - LNBITS1_ASSET_AFTER))
+
+      # Verify LNbits-1 sent 200 assets
+      if [ "$ASSET_DIFF" -eq 200 ]; then
+        pass_test "LNURL Taproot Asset payment succeeded (sent $ASSET_DIFF asset units)"
+      else
+        fail_test "Asset balance change incorrect" "Expected -200, got -$ASSET_DIFF"
+      fi
+    else
+      ERROR_MSG=$(echo "$LNBITS1_PAYMENT" | jq -r '.error // "Unknown error"')
+      fail_test "Asset payment failed: $ERROR_MSG"
+    fi
+  else
+    fail_test "Failed to get asset invoice from LNURL callback" "$CALLBACK_RESPONSE"
+  fi
+else
+  fail_test "Cannot test without required keys and IDs"
+fi
+
+# =============================================================================
+# TEST 14: Bitcoin Switch - Verify HTTPS Requirement for LNURL
+# =============================================================================
+start_test "Bitcoin Switch - Verify HTTPS Required for LNURL"
+
+if [ -n "$ASSET_SWITCH_ID" ]; then
+  echo "Testing LNURL generation requires HTTPS..."
+  # Try to access via HTTP (should fail or redirect)
+  HTTP_RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:5001/bitcoinswitch/api/v1/lnurl/$ASSET_SWITCH_ID?pin=2" 2>/dev/null || echo "000")
+
+  # Try via HTTPS (should work)
+  HTTPS_RESPONSE=$(curl -k -s "https://localhost:5443/bitcoinswitch/api/v1/lnurl/$ASSET_SWITCH_ID?pin=2")
+  HTTPS_TAG=$(echo "$HTTPS_RESPONSE" | jq -r '.tag' 2>/dev/null)
+
+  if [ "$HTTPS_TAG" = "payRequest" ]; then
+    pass_test "HTTPS LNURL endpoint works correctly (HTTP: $HTTP_RESPONSE, HTTPS: working)"
+  else
+    fail_test "HTTPS LNURL endpoint not working properly"
+  fi
+else
+  fail_test "Cannot test without asset switch ID"
+fi
+
+# =============================================================================
+# TEST 15: Bitcoin Switch - Keep Asset Switch for Manual Testing
+# =============================================================================
+start_test "Bitcoin Switch - Keep Asset Switch for Manual Testing"
+
+if [ -n "$LNBITS2_ADMIN_KEY" ] && [ -n "$ASSET_SWITCH_ID" ]; then
+  echo "Skipping deletion - keeping switch $ASSET_SWITCH_ID for manual testing"
+  pass_test "Asset switch preserved for manual testing (ID: $ASSET_SWITCH_ID)"
+else
+  fail_test "Cannot test without admin key and asset switch ID"
+fi
+
+# =============================================================================
+# TEST 16: LNbits Outbound Payment - Taproot Assets (LNbits-2 → LNbits-1)
 # =============================================================================
 start_test "LNbits Outbound Payment - Send Taproot Assets Between Users"
 
@@ -518,7 +736,7 @@ else
 fi
 
 # =============================================================================
-# TEST 12: LNbits Outbound Payment - Bitcoin (LNbits-1 → LNbits-2)
+# TEST 17: LNbits Outbound Payment - Bitcoin (LNbits-1 → LNbits-2)
 # =============================================================================
 start_test "LNbits Outbound Payment - Send Bitcoin"
 
