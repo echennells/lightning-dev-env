@@ -1,6 +1,6 @@
 services:
   bitcoind:
-    image: boltz/bitcoin-core:25.0
+    image: boltz/bitcoin-core:${BITCOIN_CORE_VERSION:-30.0}
     platform: linux/amd64
     hostname: bitcoind
     command:
@@ -22,7 +22,7 @@ services:
       - "29001:29001"
 
   litd-1:
-    image: lightninglabs/lightning-terminal:v0.14.1-alpha
+    image: lightninglabs/lightning-terminal:${LITD_VERSION:-v0.15.2-alpha}
     platform: linux/amd64
     hostname: litd-1
     depends_on:
@@ -63,6 +63,8 @@ services:
       - --taproot-assets.universe.public-access=rw
       - --taproot-assets.allow-public-uni-proof-courier
       - --taproot-assets.universe.sync-all-assets
+      # Proof courier configuration (required in v0.15.2+)
+      - --taproot-assets.proofcourieraddr=universerpc://litd-1:10009
       # Mock price oracle for RFQ testing
       - --taproot-assets.experimental.rfq.priceoracleaddress=use_mock_price_oracle_service_promise_to_not_use_on_mainnet
       - --taproot-assets.experimental.rfq.mockoracleassetsperbtc=100000
@@ -78,7 +80,7 @@ services:
       - "10029:10029" # Tapd gRPC
 
   litd-2:
-    image: lightninglabs/lightning-terminal:v0.14.1-alpha
+    image: lightninglabs/lightning-terminal:${LITD_VERSION:-v0.15.2-alpha}
     platform: linux/amd64
     hostname: litd-2
     depends_on:
@@ -118,6 +120,8 @@ services:
       - --taproot-assets.universe.public-access=rw
       - --taproot-assets.allow-public-uni-proof-courier
       - --taproot-assets.universe.sync-all-assets
+      # Proof courier configuration (required in v0.15.2+)
+      - --taproot-assets.proofcourieraddr=universerpc://litd-2:10010
       # Mock price oracle for RFQ testing
       - --taproot-assets.experimental.rfq.priceoracleaddress=use_mock_price_oracle_service_promise_to_not_use_on_mainnet
       - --taproot-assets.experimental.rfq.mockoracleassetsperbtc=100000
@@ -133,7 +137,7 @@ services:
       - "10030:10030" # Tapd gRPC
 
   lnd:
-    image: boltz/lnd:0.18.4-beta
+    image: boltz/lnd:${LND_VERSION:-0.18.4-beta}
     platform: linux/amd64
     hostname: lnd
     depends_on:
@@ -162,7 +166,8 @@ services:
       - "9737:9737"
 
   lnbits-1:
-    image: lnbits/lnbits:latest
+    image: ${LNBITS_IMAGE:-lnbits/lnbits:${LNBITS_VERSION:-v1.2.1}}
+    pull_policy: if_not_present
     platform: linux/amd64
     hostname: lnbits-1
     depends_on:
@@ -183,6 +188,7 @@ services:
       - SUPER_USER=d08a3313322a4514af75d488bcc27eee
       # LNBITS_EXTENSIONS_DEFAULT_INSTALL doesn't work in v1.2.1, use API instead
       - LNBITS_BASEURL=https://lnbits.example.com:5443
+      # Custom extension repositories
       # Taproot Assets configuration for LNbits (if supported)
       - TAPD_HOST=litd-1:10009
       - TAPD_NETWORK=regtest
@@ -196,7 +202,8 @@ services:
       - "5001:5000"
 
   lnbits-2:
-    image: lnbits/lnbits:latest
+    image: ${LNBITS_IMAGE:-lnbits/lnbits:${LNBITS_VERSION:-v1.2.1}}
+    pull_policy: if_not_present
     platform: linux/amd64
     hostname: lnbits-2
     depends_on:
@@ -215,6 +222,7 @@ services:
       - LNBITS_DEFAULT_WALLET_NAME=admin
       - SUPER_USER=e08a3313322a4514af75d488bcc27eef
       - LNBITS_BASEURL=https://lnbits.example.com:5443
+      # Custom extension repositories
       # Taproot Assets configuration for LNbits (if supported)
       - TAPD_HOST=litd-2:10010
       - TAPD_NETWORK=regtest
@@ -228,7 +236,8 @@ services:
       - "5002:5000"
 
   lnbits-3:
-    image: lnbits/lnbits:latest
+    image: ${LNBITS_IMAGE:-lnbits/lnbits:${LNBITS_VERSION:-v1.2.1}}
+    pull_policy: if_not_present
     platform: linux/amd64
     hostname: lnbits-3
     depends_on:
@@ -247,6 +256,7 @@ services:
       - LNBITS_DEFAULT_WALLET_NAME=admin
       - SUPER_USER=f08a3313322a4514af75d488bcc27ee0
       - LNBITS_BASEURL=https://lnbits.example.com:5443
+      # Custom extension repositories
     volumes:
       - lnbits-3-data:/app/data
       - ./data/lnd:/app/lnd:ro

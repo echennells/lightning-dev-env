@@ -3,3 +3,11 @@ data/
 *.log
 .env
 taproot_assets/
+bitcoinswitch/
+builds/
+test-results/
+*.patch
+*.bak
+lnbits-grpc-files/
+ssl/*.crt
+ssl/*.key

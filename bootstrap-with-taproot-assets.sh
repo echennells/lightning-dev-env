@@ -7,9 +7,9 @@ set -e
 
 # Configuration: Extensions
 TAPROOT_ASSETS_REPO="${TAPROOT_ASSETS_REPO:-https://github.com/echennells/taproot_assets}"
-TAPROOT_ASSETS_VERSION="${TAPROOT_ASSETS_VERSION:-main}"  # can be branch, tag, or commit
+TAPROOT_ASSETS_VERSION="${TAPROOT_ASSETS_VERSION:-merge-prepare}"  # can be branch, tag, or commit
 BITCOINSWITCH_REPO="${BITCOINSWITCH_REPO:-https://github.com/echennells/bitcoinswitch}"
-BITCOINSWITCH_VERSION="${BITCOINSWITCH_VERSION:-main}"  # can be branch, tag, or commit
+BITCOINSWITCH_VERSION="${BITCOINSWITCH_VERSION:-taproot-address-support}"  # can be branch, tag, or commit
 
 echo "🚀 BOOTSTRAPPING FRESH LNBITS + LNURLFLIP + TAPROOT ASSETS ENVIRONMENT"
 echo "=============================================================="
@@ -59,13 +59,34 @@ else
 fi
 echo ""
 
+# Generate SSL certificates for HTTPS proxy (required for LNURL)
+echo "=========================================="
+echo "Setting up HTTPS proxy for LNURL support"
+echo "=========================================="
+
+if [ ! -d "ssl" ]; then
+  mkdir ssl
+fi
+
+echo "Generating self-signed SSL certificate..."
+openssl req -x509 -newkey rsa:4096 -nodes \
+  -keyout ssl/lnbits.key \
+  -out ssl/lnbits.crt \
+  -days 365 \
+  -subj "/C=US/ST=Test/L=Test/O=Test/CN=lnbits.example.com" \
+  -addext "subjectAltName=DNS:lnbits.example.com,DNS:localhost" 2>/dev/null
+
+echo "✅ SSL certificates generated"
+echo ""
+
 # Start containers
 echo "Starting Docker containers..."
+# Default --pull policy respects pull_policy in docker-compose.yml
 docker compose up -d
 
-# Wait for services
-echo "Waiting for services to start..."
-sleep 30
+# Wait for services to fully initialize
+echo "Waiting for services to start (including tapd)..."
+sleep 60
 
 # Wait for HTTPS proxy to connect to LNbits
 echo "Waiting for LNbits to be ready via HTTPS proxy..."
@@ -169,6 +190,22 @@ docker compose exec -T bitcoind bitcoin-cli -regtest -rpcuser=lightning -rpcpass
 
 echo "Waiting for nodes to sync..."
 sleep 10
+
+echo "Waiting for tapd to be ready on litd-1..."
+for i in {1..30}; do
+  TAPD_CHECK=$(docker compose exec -T litd-1 tapcli --network=regtest --rpcserver=localhost:10009 --tlscertpath=/root/.lnd/tls.cert --macaroonpath=/root/.tapd/data/regtest/admin.macaroon assets list 2>&1)
+  if echo "$TAPD_CHECK" | grep -q '"assets": \[\]' || echo "$TAPD_CHECK" | grep -qE '"asset_id":|no assets'; then
+    echo "✅ tapd is ready on litd-1"
+    break
+  elif [ $i -eq 30 ]; then
+    echo "❌ tapd failed to start after 150 seconds"
+    echo "Last output: $TAPD_CHECK"
+    exit 1
+  else
+    echo "Attempt $i/30: tapd not ready yet, waiting 5 seconds..."
+    sleep 5
+  fi
+done
 
 echo ""
 echo "=========================================="
@@ -281,12 +318,14 @@ if [ -n "$ASSET_ID" ] && [ "$ASSET_ID" != "null" ]; then
     docker compose exec -T litd-2 tapcli --network=regtest --rpcserver=localhost:10010 --tlscertpath=/root/.lnd/tls.cert --macaroonpath=/root/.tapd/data/regtest/admin.macaroon universe roots
 
     # Open the Taproot Asset channel
-    echo -e "\n>>> RUNNING: litcli ln fundchannel --node_key $LITD2_PUBKEY --asset_amount 50000 --asset_id $ASSET_ID --sat_per_vbyte 5"
+    # Note: --push_amt pushes Bitcoin to the remote side (litd-2) for fee reserves
+    echo -e "\n>>> RUNNING: litcli ln fundchannel --node_key $LITD2_PUBKEY --asset_amount 50000 --asset_id $ASSET_ID --push_amt 15000 --sat_per_vbyte 5"
 
     docker compose exec -T litd-1 litcli --network=regtest ln fundchannel \
       --node_key "$LITD2_PUBKEY" \
       --asset_amount 50000 \
       --asset_id "$ASSET_ID" \
+      --push_amt 15000 \
       --sat_per_vbyte 5 2>&1
 
     CHANNEL_RESULT=$?
@@ -346,6 +385,7 @@ if [ -n "$ASSET_ID" ] && [ "$ASSET_ID" != "null" ]; then
   docker compose exec -T litd-2 tapcli --network=regtest --rpcserver=localhost:10010 --tlscertpath=/root/.lnd/tls.cert --macaroonpath=/root/.tapd/data/regtest/admin.macaroon universe roots || echo "Universe check"
 
   echo -e "\n✅ Taproot Asset minted and channel opened!"
+  echo "   (litd-2 has 15,000 sats in the channel for outbound payments)"
 
 else
   echo "❌ Failed to mint Taproot Asset: $ASSETS"
@@ -369,6 +409,24 @@ fi
 
 echo ""
 echo "=========================================="
+echo "FUNDING LNBITS WALLETS"
+echo "=========================================="
+
+# Run wallet funding script for outbound payment testing
+if [ -f "./fund-lnbits-wallets.sh" ]; then
+  echo "Funding LNbits wallets for outbound payment testing..."
+  bash ./fund-lnbits-wallets.sh
+
+  echo ""
+  echo "Final Taproot Asset channel balances:"
+  docker compose exec -T litd-1 lncli --network=regtest listchannels | jq '.channels[] | select(.commitment_type == "SIMPLE_TAPROOT_OVERLAY") | {local_balance, remote_balance, local_chan_reserve_sat, custom_channel_data: {local_balance: .custom_channel_data.local_balance, remote_balance: .custom_channel_data.remote_balance}}'
+else
+  echo "⚠️  fund-lnbits-wallets.sh not found, skipping wallet funding"
+  echo "    Outbound payment tests (TEST 11 & 12) may fail"
+fi
+
+echo ""
+echo "=========================================="
 echo "🎯 SUCCESS! ENVIRONMENT READY"
 echo "=========================================="
 echo ""
@@ -384,6 +442,10 @@ echo ""
 echo "✅ Extensions installed:"
 echo "   • Bitcoin Switch: http://localhost:5001/bitcoinswitch"
 echo "   • Taproot Assets: http://localhost:5001/taproot_assets"
+echo ""
+echo "💰 LNbits wallets funded for testing:"
+echo "   • Both wallets have Bitcoin balance"
+echo "   • LNbits-2 has Taproot Asset balance"
 echo ""
 echo "📝 To run tests:"
 echo "   ./test-suite.sh"

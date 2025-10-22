@@ -47,11 +47,19 @@ setup_lnbits_instance() {
   docker exec "$LNBITS_CONTAINER" bash -c "cd /app && tar -xzf /app/lnbits/extensions/taproot_assets/tapd_grpc_files.tar.gz"
 
   # Update config to point to the correct litd instance
+  # Note: Newer extension versions use environment variables (configured in docker-compose.yml)
+  # Older versions use a .conf file. We'll update the .conf file if it exists.
   echo "Updating config for $LITD_NAME..."
-  docker exec "$LNBITS_CONTAINER" bash -c "sed -i 's|TAPD_HOST=.*|TAPD_HOST=$LITD_NAME:$LITD_PORT|' /app/lnbits/extensions/taproot_assets/taproot_assets.conf"
-  docker exec "$LNBITS_CONTAINER" bash -c "sed -i 's|TAPD_TLS_CERT_PATH=.*|TAPD_TLS_CERT_PATH=/app/data/${LITD_NAME}-tls.cert|' /app/lnbits/extensions/taproot_assets/taproot_assets.conf"
-  docker exec "$LNBITS_CONTAINER" bash -c "sed -i 's|TAPD_MACAROON_PATH=.*|TAPD_MACAROON_PATH=/app/data/${LITD_NAME}-admin.macaroon|' /app/lnbits/extensions/taproot_assets/taproot_assets.conf"
-  docker exec "$LNBITS_CONTAINER" bash -c "sed -i 's|LND_REST_MACAROON=.*|LND_REST_MACAROON=/app/data/${LITD_NAME}-lnd-admin.macaroon|' /app/lnbits/extensions/taproot_assets/taproot_assets.conf"
+  if docker exec "$LNBITS_CONTAINER" test -f /app/lnbits/extensions/taproot_assets/taproot_assets.conf 2>/dev/null; then
+    echo "Found taproot_assets.conf, updating configuration..."
+    docker exec "$LNBITS_CONTAINER" bash -c "sed -i 's|TAPD_HOST=.*|TAPD_HOST=$LITD_NAME:$LITD_PORT|' /app/lnbits/extensions/taproot_assets/taproot_assets.conf"
+    docker exec "$LNBITS_CONTAINER" bash -c "sed -i 's|TAPD_TLS_CERT_PATH=.*|TAPD_TLS_CERT_PATH=/app/data/${LITD_NAME}-tls.cert|' /app/lnbits/extensions/taproot_assets/taproot_assets.conf"
+    docker exec "$LNBITS_CONTAINER" bash -c "sed -i 's|TAPD_MACAROON_PATH=.*|TAPD_MACAROON_PATH=/app/data/${LITD_NAME}-admin.macaroon|' /app/lnbits/extensions/taproot_assets/taproot_assets.conf"
+    docker exec "$LNBITS_CONTAINER" bash -c "sed -i 's|LND_REST_MACAROON=.*|LND_REST_MACAROON=/app/data/${LITD_NAME}-lnd-admin.macaroon|' /app/lnbits/extensions/taproot_assets/taproot_assets.conf"
+    echo "✅ Configuration file updated"
+  else
+    echo "ℹ️  No .conf file found - extension uses environment variables (configured in docker-compose.yml)"
+  fi
 
   # Copy TLS certificates and macaroons from litd to LNbits
   echo "Copying TLS certificates and macaroons from $LITD_NAME..."
