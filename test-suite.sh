@@ -505,7 +505,9 @@ if [ -n "$LNBITS2_ADMIN_KEY" ] && [ -n "$ASSET_SWITCH_ID" ] && [ -n "$LNURL_CALL
     CALLBACK_WITH_AMOUNT="${LNURL_CALLBACK}?amount=200000"
   fi
   echo "Using callback: $CALLBACK_WITH_AMOUNT"
-  CALLBACK_RESPONSE=$(curl -k -s "$CALLBACK_WITH_AMOUNT")
+  # Resolve lnbits-https-proxy to localhost:5443 for host machine
+  CALLBACK_RESPONSE=$(curl -k -s --resolve "lnbits-https-proxy:443:127.0.0.1" \
+    --connect-to "lnbits-https-proxy:443:localhost:5443" "$CALLBACK_WITH_AMOUNT")
 
   # Check if we got an error (e.g., no hardware connections)
   ERROR_STATUS=$(echo "$CALLBACK_RESPONSE" | jq -r '.status' 2>/dev/null)
@@ -580,7 +582,9 @@ if [ -n "$LNBITS1_ADMIN_KEY" ] && [ -n "$LNBITS2_ADMIN_KEY" ] && [ -n "$ASSET_SW
   else
     CALLBACK_WITH_PARAMS="${LNURL_CALLBACK}?amount=200&asset_id=$ASSET_ID"
   fi
-  CALLBACK_RESPONSE=$(curl -k -s "$CALLBACK_WITH_PARAMS")
+  # Resolve lnbits-https-proxy to localhost:5443 for host machine
+  CALLBACK_RESPONSE=$(curl -k -s --resolve "lnbits-https-proxy:443:127.0.0.1" \
+    --connect-to "lnbits-https-proxy:443:localhost:5443" "$CALLBACK_WITH_PARAMS")
 
   ASSET_INVOICE=$(echo "$CALLBACK_RESPONSE" | jq -r '.pr' 2>/dev/null)
 
