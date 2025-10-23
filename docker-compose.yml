@@ -187,7 +187,7 @@ services:
       - LNBITS_DEFAULT_WALLET_NAME=admin
       - SUPER_USER=d08a3313322a4514af75d488bcc27eee
       # LNBITS_EXTENSIONS_DEFAULT_INSTALL doesn't work in v1.2.1, use API instead
-      - LNBITS_BASEURL=https://lnbits-https-proxy:5443
+      - LNBITS_BASEURL=https://lnbits-https-proxy
       # Custom extension repositories
       # Taproot Assets configuration for LNbits (if supported)
       - TAPD_HOST=litd-1:10009
@@ -221,7 +221,7 @@ services:
       - LNBITS_ADMIN_UI=true
       - LNBITS_DEFAULT_WALLET_NAME=admin
       - SUPER_USER=e08a3313322a4514af75d488bcc27eef
-      - LNBITS_BASEURL=https://lnbits-https-proxy:5443
+      - LNBITS_BASEURL=https://lnbits-https-proxy
       # Custom extension repositories
       # Taproot Assets configuration for LNbits (if supported)
       - TAPD_HOST=litd-2:10010
@@ -255,7 +255,7 @@ services:
       - LNBITS_ADMIN_UI=true
       - LNBITS_DEFAULT_WALLET_NAME=admin
       - SUPER_USER=f08a3313322a4514af75d488bcc27ee0
-      - LNBITS_BASEURL=https://lnbits-https-proxy:5443
+      - LNBITS_BASEURL=https://lnbits-https-proxy
       # Custom extension repositories
     volumes:
       - lnbits-3-data:/app/data
