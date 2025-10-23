@@ -1,0 +1,79 @@
+name: Test Version Matrix
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+  schedule:
+    # Run weekly on Sunday at 2 AM UTC
+    - cron: '0 2 * * 0'
+
+jobs:
+  version-matrix-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        version_set: [lnbits-stable, lnbits-main, lnbits-dev]
+
+    name: Test ${{ matrix.version_set }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y jq sqlite3 curl
+
+    - name: Make scripts executable
+      run: |
+        chmod +x bootstrap-with-taproot-assets.sh
+        chmod +x test-suite.sh
+        chmod +x run-matrix-tests.sh
+
+    - name: Run matrix test for ${{ matrix.version_set }}
+      run: |
+        echo "=========================================="
+        echo "🧪 Testing Version Set: ${{ matrix.version_set }}"
+        echo "=========================================="
+        ./run-matrix-tests.sh --set ${{ matrix.version_set }}
+
+    - name: Upload test results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-results-${{ matrix.version_set }}
+        path: test-results/
+        retention-days: 30
+
+    - name: Show container status on failure
+      if: failure()
+      run: |
+        echo "=========================================="
+        echo "📊 Container Status"
+        echo "=========================================="
+        docker compose ps
+
+    - name: Show logs on failure
+      if: failure()
+      run: |
+        echo "=========================================="
+        echo "📋 Container Logs"
+        echo "=========================================="
+        docker compose logs --tail=100
+
+    - name: Cleanup
+      if: always()
+      run: |
+        echo "=========================================="
+        echo "🧹 Cleaning up"
+        echo "=========================================="
+        docker compose down -v
+        sudo rm -rf data/ test-results/
