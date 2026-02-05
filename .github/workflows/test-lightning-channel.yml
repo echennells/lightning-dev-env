@@ -1375,8 +1375,8 @@ jobs:
           echo ""
           echo "🔑 Using lnurl_url from withdraw link response..."
 
-          # Fix URL to use HTTPS proxy
-          CORRECT_URL=$(echo "$LNURL_URL" | sed 's|http://lnbits-1:5000|https://localhost:6443|g')
+          # Fix URL to use HTTPS proxy (handle both internal and external domain formats)
+          CORRECT_URL=$(echo "$LNURL_URL" | sed -e 's|http://lnbits-1:5000|https://localhost:6443|g' -e 's|https://lnbits1.example.com|https://localhost:6443|g')
           echo "Withdraw LNURL endpoint: $CORRECT_URL"
 
           CORRECT_RESPONSE=$(curl -k -s "$CORRECT_URL")
