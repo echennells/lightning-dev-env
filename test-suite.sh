@@ -436,7 +436,7 @@ if [ -n "$LNBITS2_ADMIN_KEY" ] && [ -n "$SWITCH_ID" ]; then
   GET_DELETED=$(curl -k -s "https://localhost:5443/bitcoinswitch/api/v1/$SWITCH_ID" \
     -H "X-Api-Key: $LNBITS2_ADMIN_KEY")
 
-  if echo "$GET_DELETED" | jq -e '.detail' | grep -qiE "(not found|does not exist)"; then
+  if echo "$GET_DELETED" | jq -e '.detail | test("not found|does not exist"; "i")' > /dev/null 2>&1; then
     pass_test "Standard switch deleted successfully"
   else
     fail_test "Switch still exists after deletion"

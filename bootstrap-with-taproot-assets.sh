@@ -125,7 +125,7 @@ echo "First install response: $FIRST_INSTALL"
 
 if ACCESS_TOKEN=$(echo "$FIRST_INSTALL" | jq -r '.access_token' 2>/dev/null) && [ "$ACCESS_TOKEN" != "null" ]; then
     echo "✅ Admin user created successfully"
-elif echo "$FIRST_INSTALL" | grep -q "not your first install"; then
+elif echo "$FIRST_INSTALL" | jq -e '.detail | test("not your first install")' > /dev/null 2>&1; then
     echo "✅ LNbits already initialized, logging in with existing admin..."
     LOGIN_RESP=$(curl -k -s -X POST "https://localhost:5443/api/v1/auth" \
       -H "Content-Type: application/json" \
@@ -194,7 +194,7 @@ sleep 10
 echo "Waiting for tapd to be ready on litd-1..."
 for i in {1..30}; do
   TAPD_CHECK=$(docker compose exec -T litd-1 tapcli --network=regtest --rpcserver=localhost:10009 --tlscertpath=/root/.lnd/tls.cert --macaroonpath=/root/.tapd/data/regtest/admin.macaroon assets list 2>&1)
-  if echo "$TAPD_CHECK" | grep -q '"assets": \[\]' || echo "$TAPD_CHECK" | grep -qE '"asset_id":|no assets'; then
+  if echo "$TAPD_CHECK" | jq -e '.assets != null' > /dev/null 2>&1; then
     echo "✅ tapd is ready on litd-1"
     break
   elif [ $i -eq 30 ]; then

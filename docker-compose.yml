@@ -22,7 +22,7 @@ services:
       - "29001:29001"
 
   litd-1:
-    image: lightninglabs/lightning-terminal:${LITD_VERSION:-v0.15.2-alpha}
+    image: lightninglabs/lightning-terminal:${LITD_VERSION:-v0.16.0-alpha}
     platform: linux/amd64
     hostname: litd-1
     depends_on:
@@ -80,7 +80,7 @@ services:
       - "10029:10029" # Tapd gRPC
 
   litd-2:
-    image: lightninglabs/lightning-terminal:${LITD_VERSION:-v0.15.2-alpha}
+    image: lightninglabs/lightning-terminal:${LITD_VERSION:-v0.16.0-alpha}
     platform: linux/amd64
     hostname: litd-2
     depends_on:
@@ -166,7 +166,7 @@ services:
       - "9737:9737"
 
   lnbits-1:
-    image: ${LNBITS_IMAGE:-lnbits/lnbits:${LNBITS_VERSION:-v1.3.0}}
+    image: ${LNBITS_IMAGE:-lnbits/lnbits:${LNBITS_VERSION:-v1.4.2}}
     pull_policy: if_not_present
     platform: linux/amd64
     hostname: lnbits-1
@@ -203,7 +203,7 @@ services:
       - "5001:5000"
 
   lnbits-2:
-    image: ${LNBITS_IMAGE:-lnbits/lnbits:${LNBITS_VERSION:-v1.3.0}}
+    image: ${LNBITS_IMAGE:-lnbits/lnbits:${LNBITS_VERSION:-v1.4.2}}
     pull_policy: if_not_present
     platform: linux/amd64
     hostname: lnbits-2
@@ -238,7 +238,7 @@ services:
       - "5002:5000"
 
   lnbits-3:
-    image: ${LNBITS_IMAGE:-lnbits/lnbits:${LNBITS_VERSION:-v1.3.0}}
+    image: ${LNBITS_IMAGE:-lnbits/lnbits:${LNBITS_VERSION:-v1.4.2}}
     pull_policy: if_not_present
     platform: linux/amd64
     hostname: lnbits-3
