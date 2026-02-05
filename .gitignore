@@ -12,3 +12,9 @@ lnbits-grpc-files/
 lnbits-*/
 ssl/*.crt
 ssl/*.key
+
+# LNURL extensions (cloned by bootstrap script)
+lnurlp/
+withdraw/
+lnurlFlip/
+lnbits_keys.env
