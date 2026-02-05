@@ -1359,35 +1359,31 @@ jobs:
         if echo "$WITHDRAW_LINK" | jq -e '.id' > /dev/null; then
           WITHDRAW_ID=$(echo "$WITHDRAW_LINK" | jq -r '.id')
           WITHDRAW_HASH=$(echo "$WITHDRAW_LINK" | jq -r '.unique_hash')
+          WITHDRAW_K1=$(echo "$WITHDRAW_LINK" | jq -r '.k1')
+          LNURL_URL=$(echo "$WITHDRAW_LINK" | jq -r '.lnurl_url')
           echo "✅ Created withdraw link!"
           echo "   ID: $WITHDRAW_ID"
           echo "   unique_hash: $WITHDRAW_HASH"
-          
+          echo "   k1: $WITHDRAW_K1"
+          echo "   lnurl_url: $LNURL_URL"
+
           # Wait for withdraw link open_time (it has wait_time: 1 second)
           echo "⏰ Waiting 2 seconds for withdraw link open_time..."
           sleep 2
-          
-          # Calculate id_unique_hash using the discovered formula
+
+          # Use the lnurl_url directly from the response (no need to calculate id_unique_hash)
           echo ""
-          echo "🔑 Calculating id_unique_hash (the key fix)..."
-          FIRST_ID_UNIQUE_HASH=$(docker compose exec -T lnbits-1 python3 -c "import shortuuid; print(shortuuid.uuid(name='$WITHDRAW_ID' + '$WITHDRAW_HASH' + '0'))" 2>/dev/null || echo "")
-          
-          if [ -z "$FIRST_ID_UNIQUE_HASH" ]; then
-            echo "Fallback calculation..."
-            FIRST_ID_UNIQUE_HASH="calculated_hash_$(date +%s)"
-          fi
-          
-          echo "✅ id_unique_hash for use 0: $FIRST_ID_UNIQUE_HASH"
-          
-          # Test the withdraw callback with correct format
-          echo "Testing withdraw LNURL with correct id_unique_hash format..."
-          CORRECT_URL="https://localhost:6443/withdraw/api/v1/lnurl/$WITHDRAW_HASH/$FIRST_ID_UNIQUE_HASH"
-          
+          echo "🔑 Using lnurl_url from withdraw link response..."
+
+          # Fix URL to use HTTPS proxy
+          CORRECT_URL=$(echo "$LNURL_URL" | sed 's|http://lnbits-1:5000|https://localhost:6443|g')
+          echo "Withdraw LNURL endpoint: $CORRECT_URL"
+
           CORRECT_RESPONSE=$(curl -k -s "$CORRECT_URL")
           echo "Withdraw LNURL response: $CORRECT_RESPONSE"
-          
+
           if echo "$CORRECT_RESPONSE" | jq -e '.k1' > /dev/null; then
-            echo "🎉 SUCCESS! Correct format works!"
+            echo "🎉 SUCCESS! Got withdraw request details!"
             K1=$(echo "$CORRECT_RESPONSE" | jq -r '.k1')
             CALLBACK_URL=$(echo "$CORRECT_RESPONSE" | jq -r '.callback')
             echo "   K1: $K1"
@@ -1492,7 +1488,7 @@ jobs:
             fi
             
           else
-            echo "❌ Correct format failed unexpectedly: $CORRECT_RESPONSE"
+            echo "❌ Failed to get withdraw request from lnurl_url: $CORRECT_RESPONSE"
             exit 1
           fi
           
