@@ -18,7 +18,7 @@
     },
     {
       "name": "bleeding-edge",
-      "description": "Latest litd + LNbits dev branch (catch breakages early)",
+      "description": "Latest litd + LNbits dev branch (catch LNbits breakages early)",
       "versions": {
         "bitcoin_core": "30.0",
         "litd": "v0.16.0-alpha",

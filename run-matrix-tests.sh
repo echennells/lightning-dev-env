@@ -143,6 +143,14 @@ while IFS= read -r version_set; do
     unset LNBITS_IMAGE
   fi
 
+  # Set LITD_IMAGE for source builds (local images)
+  if [ "$LITD_VERSION" = "master" ] || [ "$LITD_VERSION" = "main" ]; then
+    export LITD_IMAGE="local-litd:dev"
+  else
+    # Unset LITD_IMAGE for official versions (let docker-compose use default)
+    unset LITD_IMAGE
+  fi
+
   # Create timestamped result file
   TIMESTAMP=$(date +%Y%m%d-%H%M%S)
   RESULT_FILE="$RESULTS_DIR/test-${SET_NAME}-${TIMESTAMP}.log"

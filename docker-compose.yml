@@ -22,7 +22,7 @@ services:
       - "29001:29001"
 
   litd-1:
-    image: lightninglabs/lightning-terminal:${LITD_VERSION:-v0.16.0-alpha}
+    image: ${LITD_IMAGE:-lightninglabs/lightning-terminal:${LITD_VERSION:-v0.16.0-alpha}}
     platform: linux/amd64
     hostname: litd-1
     depends_on:
@@ -80,7 +80,7 @@ services:
       - "10029:10029" # Tapd gRPC
 
   litd-2:
-    image: lightninglabs/lightning-terminal:${LITD_VERSION:-v0.16.0-alpha}
+    image: ${LITD_IMAGE:-lightninglabs/lightning-terminal:${LITD_VERSION:-v0.16.0-alpha}}
     platform: linux/amd64
     hostname: litd-2
     depends_on:
