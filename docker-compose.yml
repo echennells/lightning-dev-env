@@ -297,6 +297,35 @@ services:
     ports:
       - "5003:5000"
 
+  # LNbits for RFQ payer (sats-only node for testing RFQ conversions)
+  lnbits-4:
+    image: ${LNBITS_IMAGE:-lnbits/lnbits:${LNBITS_VERSION:-v1.4.2}}
+    pull_policy: if_not_present
+    platform: linux/amd64
+    hostname: lnbits-4
+    depends_on:
+      - lnd-rfq-payer
+    restart: on-failure
+    environment:
+      - LNBITS_BACKEND_WALLET_CLASS=LndRestWallet
+      - LND_REST_ENDPOINT=https://lnd-rfq-payer:8086
+      - LND_REST_CERT=/app/lnd/tls.cert
+      - LND_REST_MACAROON=/app/lnd/data/chain/bitcoin/regtest/admin.macaroon
+      - LNBITS_SITE_TITLE=LNbits - RFQ Payer
+      - LNBITS_DATA_FOLDER=/app/data
+      - FORWARDED_ALLOW_IPS=*
+      - DEBUG=true
+      - LNBITS_ADMIN_UI=true
+      - LNBITS_DEFAULT_WALLET_NAME=admin
+      - SUPER_USER=a08a3313322a4514af75d488bcc27ee1
+      - LNBITS_BASEURL=https://lnbits-https-proxy
+      - HTTPX_VERIFY=false
+    volumes:
+      - lnbits-4-data:/app/data
+      - ./data/lnd-rfq-payer:/app/lnd:ro
+    ports:
+      - "5004:5000"
+
   # HTTPS proxy for LNbits (for LNURL compatibility in CI/CD)
   lnbits-https-proxy:
     image: nginx:alpine
@@ -330,3 +359,4 @@ volumes:
   lnbits-1-data:
   lnbits-2-data:
   lnbits-3-data:
+  lnbits-4-data:
