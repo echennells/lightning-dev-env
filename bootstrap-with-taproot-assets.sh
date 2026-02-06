@@ -392,9 +392,6 @@ else
   exit 1
 fi
 
-# lnurlFlip testing removed - API extension installation is unreliable
-# Extensions will be installed via setup-lnbits-extensions.sh after this script completes
-
 echo ""
 echo "=========================================="
 echo "INSTALLING BITCOIN SWITCH & TAPROOT ASSETS EXTENSIONS"
@@ -405,6 +402,18 @@ if [ -f "./setup-lnbits-extensions.sh" ]; then
   ./setup-lnbits-extensions.sh
 else
   echo "⚠️  setup-lnbits-extensions.sh not found, skipping extension setup"
+fi
+
+echo ""
+echo "=========================================="
+echo "INSTALLING LNURL EXTENSIONS (lnurlp, withdraw, lnurlFlip)"
+echo "=========================================="
+
+# Run the LNURL extension bootstrap (uses file-copy method)
+if [ -f "./bootstrap-lnurl-extensions.sh" ]; then
+  ./bootstrap-lnurl-extensions.sh
+else
+  echo "⚠️  bootstrap-lnurl-extensions.sh not found, skipping LNURL extension setup"
 fi
 
 echo ""

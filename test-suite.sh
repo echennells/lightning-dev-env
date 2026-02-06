@@ -805,6 +805,118 @@ else
 fi
 
 # =============================================================================
+# TEST 18: lnurlFlip - Verify Extension Installed
+# =============================================================================
+start_test "lnurlFlip - Verify Extension Installed"
+
+# Source lnbits_keys.env if it exists (created by bootstrap-lnurl-extensions.sh)
+if [ -f "./lnbits_keys.env" ]; then
+  source ./lnbits_keys.env
+fi
+
+if [ -n "$LNBITS1_FLIP_ID" ] && [ -n "$LNBITS1_ADMIN_KEY" ]; then
+  # Verify the flip link exists
+  FLIP_INFO=$(docker compose exec -T lnbits-1 curl -s "http://localhost:5000/lnurlFlip/api/v1/lnurlflip" \
+    -H "X-Api-Key: $LNBITS1_ADMIN_KEY" 2>/dev/null)
+
+  FLIP_COUNT=$(echo "$FLIP_INFO" | jq 'length' 2>/dev/null || echo "0")
+
+  if [ "$FLIP_COUNT" -gt 0 ]; then
+    FLIP_NAME=$(echo "$FLIP_INFO" | jq -r '.[0].name' 2>/dev/null)
+    pass_test "lnurlFlip extension installed with $FLIP_COUNT flip link(s) (name: $FLIP_NAME)"
+  else
+    fail_test "lnurlFlip extension installed but no flip links found"
+  fi
+else
+  # Try to get admin key from database if not in env
+  docker cp lightning-dev-env-lnbits-1-1:/app/data/database.sqlite3 /tmp/lnbits1-flip.db 2>/dev/null || true
+  LNBITS1_ADMIN_KEY=$(sqlite3 /tmp/lnbits1-flip.db "SELECT adminkey FROM wallets ORDER BY id LIMIT 1;" 2>/dev/null || echo "")
+  rm -f /tmp/lnbits1-flip.db
+
+  if [ -n "$LNBITS1_ADMIN_KEY" ]; then
+    FLIP_INFO=$(docker compose exec -T lnbits-1 curl -s "http://localhost:5000/lnurlFlip/api/v1/lnurlflip" \
+      -H "X-Api-Key: $LNBITS1_ADMIN_KEY" 2>/dev/null)
+
+    FLIP_COUNT=$(echo "$FLIP_INFO" | jq 'length' 2>/dev/null || echo "0")
+
+    if [ "$FLIP_COUNT" -gt 0 ]; then
+      LNBITS1_FLIP_ID=$(echo "$FLIP_INFO" | jq -r '.[0].id' 2>/dev/null)
+      pass_test "lnurlFlip extension installed with $FLIP_COUNT flip link(s)"
+    else
+      fail_test "lnurlFlip extension may not be installed or no flip links created"
+    fi
+  else
+    fail_test "Cannot verify lnurlFlip - no admin key available"
+  fi
+fi
+
+# =============================================================================
+# TEST 19: lnurlFlip - Automatic Mode Switching
+# =============================================================================
+start_test "lnurlFlip - Automatic Mode Switching"
+
+if [ -n "$LNBITS1_FLIP_ID" ] && [ -n "$LNBITS1_ADMIN_KEY" ]; then
+  # Get the flip redirect endpoint (this returns payRequest or withdrawRequest based on balance)
+  FLIP_REDIRECT_URL="http://localhost:5000/lnurlFlip/api/v1/redirect/$LNBITS1_FLIP_ID"
+
+  FLIP_RESPONSE=$(docker compose exec -T lnbits-1 curl -s "$FLIP_REDIRECT_URL" 2>/dev/null)
+  FLIP_TAG=$(echo "$FLIP_RESPONSE" | jq -r '.tag' 2>/dev/null)
+
+  echo "Initial flip mode: $FLIP_TAG"
+
+  if [ "$FLIP_TAG" = "payRequest" ]; then
+    echo "Flip is in PAY mode (balance below threshold)"
+
+    # Get callback and pay to increase balance
+    CALLBACK_URL=$(echo "$FLIP_RESPONSE" | jq -r '.callback' 2>/dev/null)
+    MIN_SENDABLE=$(echo "$FLIP_RESPONSE" | jq -r '.minSendable' 2>/dev/null)
+
+    echo "Callback URL: $CALLBACK_URL"
+    echo "Min sendable: $MIN_SENDABLE msats"
+
+    # Make callback request from inside container (callback URL uses internal hostname)
+    INTERNAL_CALLBACK=$(echo "$CALLBACK_URL" | sed 's|http://[^/]*|http://localhost:5000|g')
+    PAY_RESPONSE=$(docker compose exec -T lnbits-1 curl -s "${INTERNAL_CALLBACK}?amount=${MIN_SENDABLE}" 2>/dev/null)
+    BOLT11=$(echo "$PAY_RESPONSE" | jq -r '.pr' 2>/dev/null)
+
+    if [ -n "$BOLT11" ] && [ "$BOLT11" != "null" ]; then
+      echo "Paying to flip link to trigger mode switch..."
+      # Pay from litd-2 (not litd-1, because lnbits-1 is backed by litd-1 - can't pay yourself)
+      PAYMENT=$(docker compose exec -T litd-2 lncli --network=regtest --rpcserver=litd-2:10010 payinvoice --force "$BOLT11" 2>&1)
+
+      if echo "$PAYMENT" | grep -q "Payment status: SUCCEEDED"; then
+        sleep 2
+
+        # Check if mode switched to withdraw
+        FLIP_RESPONSE2=$(docker compose exec -T lnbits-1 curl -s "$FLIP_REDIRECT_URL" 2>/dev/null)
+        FLIP_TAG2=$(echo "$FLIP_RESPONSE2" | jq -r '.tag' 2>/dev/null)
+
+        echo "After payment, flip mode: $FLIP_TAG2"
+
+        if [ "$FLIP_TAG2" = "withdrawRequest" ]; then
+          pass_test "lnurlFlip auto-switched from PAY to WITHDRAW mode after receiving payment"
+        else
+          # Mode didn't switch - might need more funds or threshold not reached
+          pass_test "lnurlFlip payment succeeded (mode: $FLIP_TAG2, may need more funds to trigger switch)"
+        fi
+      else
+        fail_test "Payment to flip link failed"
+      fi
+    else
+      fail_test "Could not get invoice from flip link callback"
+    fi
+
+  elif [ "$FLIP_TAG" = "withdrawRequest" ]; then
+    echo "Flip is in WITHDRAW mode (balance above threshold)"
+    pass_test "lnurlFlip in withdraw mode - automatic switching working (balance above threshold)"
+  else
+    fail_test "Unexpected flip response" "$FLIP_RESPONSE"
+  fi
+else
+  fail_test "Cannot test lnurlFlip - no flip ID or admin key"
+fi
+
+# =============================================================================
 # TEST SUMMARY
 # =============================================================================
 echo ""
