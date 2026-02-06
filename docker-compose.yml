@@ -165,6 +165,37 @@ services:
       - "8085:8082"
       - "9737:9737"
 
+  # RFQ test payer - only has channel to litd-1 (RFQ edge), no direct route to litd-2
+  # This forces payments to follow route hints through the RFQ edge
+  lnd-rfq-payer:
+    image: boltz/lnd:${LND_VERSION:-0.18.4-beta}
+    platform: linux/amd64
+    hostname: lnd-rfq-payer
+    depends_on:
+      - bitcoind
+    restart: on-failure
+    command:
+      - --listen=lnd-rfq-payer:9738
+      - --rpclisten=lnd-rfq-payer:10012
+      - --restlisten=lnd-rfq-payer:8086
+      - --bitcoin.active
+      - --bitcoin.regtest
+      - --bitcoin.node=bitcoind
+      - --bitcoind.rpchost=bitcoind:18443
+      - --bitcoind.rpcuser=lightning
+      - --bitcoind.rpcpass=lightning
+      - --bitcoind.zmqpubrawtx=tcp://bitcoind:29000
+      - --bitcoind.zmqpubrawblock=tcp://bitcoind:29001
+      - --noseedbackup
+      - --tlsextradomain=lnd-rfq-payer
+      - --tlsextradomain=localhost
+    volumes:
+      - ./data/lnd-rfq-payer:/root/.lnd/
+    ports:
+      - "10012:10012"
+      - "8086:8086"
+      - "9738:9738"
+
   lnbits-1:
     image: ${LNBITS_IMAGE:-lnbits/lnbits:${LNBITS_VERSION:-v1.4.2}}
     pull_policy: if_not_present

@@ -633,7 +633,75 @@ else
 fi
 
 # =============================================================================
-# TEST 14: Bitcoin Switch - Verify HTTPS Requirement for LNURL
+# TEST 14: Bitcoin Switch - Pay LNURL with Sats via RFQ (Asset invoice paid with sats)
+# =============================================================================
+start_test "Bitcoin Switch - Pay LNURL with Sats via RFQ"
+
+# This tests the RFQ flow: request an asset invoice, but pay it with regular sats
+# The RFQ system converts sats to assets at market rate
+#
+# IMPORTANT: We use lnd-rfq-payer which ONLY has a channel to litd-1 (RFQ edge)
+# This forces the payment to follow route hints through the RFQ edge, because
+# there's no direct channel to litd-2 (the receiver).
+# Without this topology, LND would bypass route hints and pay directly.
+
+if [ -n "$LNBITS2_ADMIN_KEY" ] && [ -n "$ASSET_SWITCH_ID" ] && [ -n "$LNURL_CALLBACK" ] && [ -n "$ASSET_ID" ]; then
+  # Get LNbits-2 asset balance before (receiver)
+  LNBITS2_ASSET_BEFORE=$(docker compose exec -T lnbits-2 curl -s "http://localhost:5000/taproot_assets/api/v1/taproot/listassets" \
+    -H "X-Api-Key: $LNBITS2_ADMIN_KEY" | jq -r '.[0].user_balance // 0' 2>/dev/null)
+
+  echo "LNbits-2 asset balance before: $LNBITS2_ASSET_BEFORE units"
+
+  # Request an ASSET invoice from the switch (same as TEST 13)
+  echo "Requesting Taproot Asset invoice from LNURL callback..."
+  if [[ "$LNURL_CALLBACK" == *"?"* ]]; then
+    RFQ_CALLBACK="${LNURL_CALLBACK}&amount=100&asset_id=$ASSET_ID"
+  else
+    RFQ_CALLBACK="${LNURL_CALLBACK}?amount=100&asset_id=$ASSET_ID"
+  fi
+
+  RFQ_RESPONSE=$(curl -k -s --resolve "lnbits-https-proxy:443:127.0.0.1" \
+    --connect-to "lnbits-https-proxy:443:localhost:5443" "$RFQ_CALLBACK")
+
+  RFQ_INVOICE=$(echo "$RFQ_RESPONSE" | jq -r '.pr' 2>/dev/null)
+
+  if [ -n "$RFQ_INVOICE" ] && [ "$RFQ_INVOICE" != "null" ]; then
+    echo "Got asset invoice: ${RFQ_INVOICE:0:60}..."
+
+    # Pay with lnd-rfq-payer (SATS only node) - forces RFQ route hint usage
+    # This node only has a channel to litd-1, so it MUST follow the route hint
+    echo "Paying asset invoice with sats from lnd-rfq-payer (RFQ conversion via route hints)..."
+    RFQ_PAYMENT=$(docker compose exec -T lnd-rfq-payer lncli --network=regtest --rpcserver=lnd-rfq-payer:10012 payinvoice --force --timeout=30s "$RFQ_INVOICE" 2>&1)
+
+    if echo "$RFQ_PAYMENT" | grep -q "Payment status: SUCCEEDED"; then
+      sleep 3
+
+      # Check LNbits-2 asset balance after - should have received assets
+      LNBITS2_ASSET_AFTER=$(docker compose exec -T lnbits-2 curl -s "http://localhost:5000/taproot_assets/api/v1/taproot/listassets" \
+        -H "X-Api-Key: $LNBITS2_ADMIN_KEY" | jq -r '.[0].user_balance // 0' 2>/dev/null)
+
+      echo "LNbits-2 asset balance after: $LNBITS2_ASSET_AFTER units"
+
+      ASSET_RECEIVED=$((LNBITS2_ASSET_AFTER - LNBITS2_ASSET_BEFORE))
+
+      # Verify receiver got assets (paid with sats, received assets via RFQ)
+      if [ "$ASSET_RECEIVED" -ge 90 ] && [ "$ASSET_RECEIVED" -le 110 ]; then
+        pass_test "RFQ payment succeeded (paid sats, receiver got $ASSET_RECEIVED asset units)"
+      else
+        fail_test "RFQ conversion incorrect" "Expected ~100 assets, got $ASSET_RECEIVED"
+      fi
+    else
+      fail_test "RFQ payment failed" "$RFQ_PAYMENT"
+    fi
+  else
+    fail_test "Failed to get asset invoice for RFQ test" "$RFQ_RESPONSE"
+  fi
+else
+  fail_test "Cannot test without required keys and IDs"
+fi
+
+# =============================================================================
+# TEST 15: Bitcoin Switch - Verify HTTPS Requirement for LNURL
 # =============================================================================
 start_test "Bitcoin Switch - Verify HTTPS Required for LNURL"
 
@@ -656,7 +724,7 @@ else
 fi
 
 # =============================================================================
-# TEST 15: Bitcoin Switch - Keep Asset Switch for Manual Testing
+# TEST 16: Bitcoin Switch - Keep Asset Switch for Manual Testing
 # =============================================================================
 start_test "Bitcoin Switch - Keep Asset Switch for Manual Testing"
 
@@ -668,7 +736,7 @@ else
 fi
 
 # =============================================================================
-# TEST 16: LNbits Outbound Payment - Taproot Assets (LNbits-2 → LNbits-1)
+# TEST 17: LNbits Outbound Payment - Taproot Assets (LNbits-2 → LNbits-1)
 # =============================================================================
 start_test "LNbits Outbound Payment - Send Taproot Assets Between Users"
 
@@ -740,7 +808,7 @@ else
 fi
 
 # =============================================================================
-# TEST 17: LNbits Outbound Payment - Bitcoin (LNbits-1 → LNbits-2)
+# TEST 18: LNbits Outbound Payment - Bitcoin (LNbits-1 → LNbits-2)
 # =============================================================================
 start_test "LNbits Outbound Payment - Send Bitcoin"
 
@@ -805,7 +873,7 @@ else
 fi
 
 # =============================================================================
-# TEST 18: lnurlFlip - Verify Extension Installed
+# TEST 19: lnurlFlip - Verify Extension Installed
 # =============================================================================
 start_test "lnurlFlip - Verify Extension Installed"
 
@@ -851,7 +919,7 @@ else
 fi
 
 # =============================================================================
-# TEST 19: lnurlFlip - Automatic Mode Switching
+# TEST 20: lnurlFlip - Automatic Mode Switching
 # =============================================================================
 start_test "lnurlFlip - Automatic Mode Switching"
 

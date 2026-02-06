@@ -170,6 +170,7 @@ echo "Creating Bitcoin wallets for all Lightning nodes..."
 docker compose exec -T bitcoind bitcoin-cli -regtest -rpcuser=lightning -rpcpassword=lightning createwallet litd-1 || true
 docker compose exec -T bitcoind bitcoin-cli -regtest -rpcuser=lightning -rpcpassword=lightning createwallet litd-2 || true
 docker compose exec -T bitcoind bitcoin-cli -regtest -rpcuser=lightning -rpcpassword=lightning createwallet lnd || true
+docker compose exec -T bitcoind bitcoin-cli -regtest -rpcuser=lightning -rpcpassword=lightning createwallet lnd-rfq-payer || true
 
 echo "Mining initial blocks..."
 ADDR=$(docker compose exec -T bitcoind bitcoin-cli -regtest -rpcwallet=litd-1 -rpcuser=lightning -rpcpassword=lightning getnewaddress)
@@ -179,11 +180,13 @@ echo "Funding Lightning nodes..."
 LITD1_ADDR=$(docker compose exec -T litd-1 lncli --network=regtest newaddress p2wkh | jq -r .address)
 LITD2_ADDR=$(docker compose exec -T litd-2 lncli --network=regtest --rpcserver=litd-2:10010 newaddress p2wkh | jq -r .address)
 LND_ADDR=$(docker compose exec -T lnd lncli --network=regtest --rpcserver=lnd:10011 newaddress p2wkh | jq -r .address)
+LND_RFQ_ADDR=$(docker compose exec -T lnd-rfq-payer lncli --network=regtest --rpcserver=lnd-rfq-payer:10012 newaddress p2wkh | jq -r .address)
 
 # Fund each node with 10 BTC (all from litd-1 wallet which has the mining rewards)
 docker compose exec -T bitcoind bitcoin-cli -regtest -rpcwallet=litd-1 -rpcuser=lightning -rpcpassword=lightning sendtoaddress $LITD1_ADDR 10
 docker compose exec -T bitcoind bitcoin-cli -regtest -rpcwallet=litd-1 -rpcuser=lightning -rpcpassword=lightning sendtoaddress $LITD2_ADDR 10
 docker compose exec -T bitcoind bitcoin-cli -regtest -rpcwallet=litd-1 -rpcuser=lightning -rpcpassword=lightning sendtoaddress $LND_ADDR 10
+docker compose exec -T bitcoind bitcoin-cli -regtest -rpcwallet=litd-1 -rpcuser=lightning -rpcpassword=lightning sendtoaddress $LND_RFQ_ADDR 10
 
 echo "Mining blocks to confirm funding..."
 docker compose exec -T bitcoind bitcoin-cli -regtest -rpcuser=lightning -rpcpassword=lightning generatetoaddress 6 $ADDR > /dev/null
@@ -248,17 +251,21 @@ if [ -n "$ASSET_ID" ] && [ "$ASSET_ID" != "null" ]; then
   LITD1_PUBKEY=$(docker compose exec -T litd-1 lncli --network=regtest getinfo | jq -r .identity_pubkey)
   LITD2_PUBKEY=$(docker compose exec -T litd-2 lncli --network=regtest --rpcserver=litd-2:10010 getinfo | jq -r .identity_pubkey)
   LND_PUBKEY=$(docker compose exec -T lnd lncli --network=regtest --rpcserver=lnd:10011 getinfo | jq -r .identity_pubkey)
+  LND_RFQ_PUBKEY=$(docker compose exec -T lnd-rfq-payer lncli --network=regtest --rpcserver=lnd-rfq-payer:10012 getinfo | jq -r .identity_pubkey)
 
   echo "Node pubkeys:"
   echo "  litd-1: $LITD1_PUBKEY"
   echo "  litd-2: $LITD2_PUBKEY"
   echo "  lnd: $LND_PUBKEY"
+  echo "  lnd-rfq-payer: $LND_RFQ_PUBKEY"
 
   # Connect nodes
   echo "Connecting nodes..."
   docker compose exec -T litd-1 lncli --network=regtest connect ${LITD2_PUBKEY}@litd-2:9736 || true
   docker compose exec -T litd-1 lncli --network=regtest connect ${LND_PUBKEY}@lnd:9737 || true
   docker compose exec -T litd-2 lncli --network=regtest --rpcserver=litd-2:10010 connect ${LND_PUBKEY}@lnd:9737 || true
+  # Connect RFQ payer ONLY to litd-1 (not to litd-2) - this forces RFQ route hints to be used
+  docker compose exec -T lnd-rfq-payer lncli --network=regtest --rpcserver=lnd-rfq-payer:10012 connect ${LITD1_PUBKEY}@litd-1:9735 || true
 
   # Open regular Lightning channels first
   echo "Opening regular Lightning channels..."
@@ -280,6 +287,15 @@ if [ -n "$ASSET_ID" ] && [ "$ASSET_ID" != "null" ]; then
   # litd-1 -> litd-2 (10M sats)
   echo "Opening channel: litd-1 -> litd-2..."
   docker compose exec -T litd-1 lncli --network=regtest openchannel --node_key $LITD2_PUBKEY --local_amt 10000000 --push_amt 5000000
+  echo "Mining blocks to confirm..."
+  docker compose exec -T bitcoind bitcoin-cli -regtest -rpcuser=lightning -rpcpassword=lightning generatetoaddress 6 $ADDR > /dev/null
+  sleep 3
+
+  # lnd-rfq-payer -> litd-1 ONLY (10M sats) - NO channel to litd-2!
+  # This node is specifically for testing RFQ sats-to-assets payments
+  # It must follow route hints because it has no direct path to litd-2
+  echo "Opening channel: lnd-rfq-payer -> litd-1 (RFQ test payer)..."
+  docker compose exec -T lnd-rfq-payer lncli --network=regtest --rpcserver=lnd-rfq-payer:10012 openchannel --node_key $LITD1_PUBKEY --local_amt 10000000 --push_amt 5000000
 
   echo "Mining blocks to confirm all channels..."
   docker compose exec -T bitcoind bitcoin-cli -regtest -rpcuser=lightning -rpcpassword=lightning generatetoaddress 6 $ADDR > /dev/null
