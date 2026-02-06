@@ -17,7 +17,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        version_set: [latest, lnbits-stable, lnbits-main, lnbits-dev]
+        version_set: [stable, bleeding-edge, legacy]
 
     name: Test ${{ matrix.version_set }}
 

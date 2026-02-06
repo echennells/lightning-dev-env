@@ -1,57 +1,32 @@
 {
-  "comment": "Version matrix configuration for testing different LNbits and litd versions",
+  "comment": "Version matrix for testing Lightning dev environment",
   "version_sets": [
     {
-      "name": "latest",
-      "description": "Latest stable releases: litd v0.16.0-alpha + LNbits v1.4.2",
+      "name": "stable",
+      "description": "Current stable releases",
       "versions": {
         "bitcoin_core": "30.0",
         "litd": "v0.16.0-alpha",
         "lnd": "0.18.4-beta",
         "lnbits": "v1.4.2",
+        "lnurlp_ext": "1.2.0",
+        "withdraw_ext": "1.2.2",
+        "lnurlflip_ext": "main",
         "taproot_assets_ext": "main",
         "bitcoinswitch_ext": "main"
       }
     },
     {
-      "name": "lnbits-stable",
-      "description": "LNbits v1.3.0 stable release",
+      "name": "bleeding-edge",
+      "description": "Latest litd + LNbits dev branch (catch breakages early)",
       "versions": {
         "bitcoin_core": "30.0",
-        "litd": "v0.15.2-alpha",
-        "lnd": "0.18.4-beta",
-        "lnbits": "v1.3.0",
-        "taproot_assets_ext": "main",
-        "bitcoinswitch_ext": "main"
-      }
-    },
-    {
-      "name": "lnbits-main",
-      "description": "LNbits main branch (pre-release, more stable than dev)",
-      "versions": {
-        "bitcoin_core": "30.0",
-        "litd": "v0.15.2-alpha",
+        "litd": "v0.16.0-alpha",
         "lnd": "0.18.4-beta",
         "lnbits": "dev",
-        "taproot_assets_ext": "main",
-        "bitcoinswitch_ext": "main"
-      },
-      "build_from_source": {
-        "lnbits": {
-          "repo": "https://github.com/lnbits/lnbits.git",
-          "branch": "main",
-          "dockerfile": "Dockerfile"
-        }
-      }
-    },
-    {
-      "name": "lnbits-dev",
-      "description": "LNbits dev branch (bleeding edge, default branch)",
-      "versions": {
-        "bitcoin_core": "30.0",
-        "litd": "v0.15.2-alpha",
-        "lnd": "0.18.4-beta",
-        "lnbits": "dev",
+        "lnurlp_ext": "1.2.0",
+        "withdraw_ext": "1.2.2",
+        "lnurlflip_ext": "main",
         "taproot_assets_ext": "main",
         "bitcoinswitch_ext": "main"
       },
@@ -62,16 +37,42 @@
           "dockerfile": "Dockerfile"
         }
       }
+    },
+    {
+      "name": "legacy",
+      "description": "One major release back",
+      "versions": {
+        "bitcoin_core": "30.0",
+        "litd": "v0.15.2-alpha",
+        "lnd": "0.18.4-beta",
+        "lnbits": "v1.3.0",
+        "lnurlp_ext": "1.1.2",
+        "withdraw_ext": "1.0.1",
+        "lnurlflip_ext": "main",
+        "taproot_assets_ext": "main",
+        "bitcoinswitch_ext": "main"
+      }
     }
   ],
   "docker_images": {
-    "comment": "Docker image templates - {version} will be replaced with values from version_sets",
     "bitcoin_core": "boltz/bitcoin-core:{version}",
     "litd": "lightninglabs/lightning-terminal:{version}",
     "lnd": "boltz/lnd:{version}",
     "lnbits": "lnbits/lnbits:{version}"
   },
   "extension_repos": {
+    "lnurlp": {
+      "repo": "https://github.com/lnbits/lnurlp",
+      "version_type": "tag"
+    },
+    "withdraw": {
+      "repo": "https://github.com/lnbits/withdraw",
+      "version_type": "tag"
+    },
+    "lnurlflip": {
+      "repo": "https://github.com/echennells/lnurlFlip",
+      "version_type": "branch"
+    },
     "taproot_assets": {
       "repo": "https://github.com/echennells/taproot_assets",
       "version_type": "tag"
