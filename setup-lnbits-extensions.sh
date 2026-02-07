@@ -188,6 +188,44 @@ setup_lnbits_instance \
   "litd-2" \
   "10010"
 
+# Setup lnbits-4 (RFQ payer - sats only, no extensions needed)
+echo ""
+echo "=========================================="
+echo "Setting up lnbits-4 (RFQ Payer - sats only)"
+echo "=========================================="
+
+LNBITS4_URL="http://localhost:5004"
+
+# Wait for LNbits-4 to be ready
+echo "Waiting for LNbits-4 to be ready..."
+for i in {1..30}; do
+  if curl -s "$LNBITS4_URL/api/v1/health" > /dev/null 2>&1; then
+    echo "✅ LNbits-4 is ready"
+    break
+  fi
+  if [ $i -eq 30 ]; then
+    echo "⚠️  LNbits-4 not responding, skipping..."
+  fi
+  sleep 2
+done
+
+# Create admin user via first_install API
+echo "Creating admin user for LNbits-4..."
+FIRST_INSTALL=$(curl -s -X PUT "$LNBITS4_URL/api/v1/auth/first_install" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "admin",
+    "password": "password123",
+    "password_repeat": "password123"
+  }')
+
+ACCESS_TOKEN=$(echo "$FIRST_INSTALL" | jq -r '.access_token')
+if [ -n "$ACCESS_TOKEN" ] && [ "$ACCESS_TOKEN" != "null" ]; then
+  echo "✅ Admin user created for LNbits-4"
+else
+  echo "ℹ️  Admin user may already exist for LNbits-4"
+fi
+
 echo ""
 echo "=========================================="
 echo "✅ All Extensions Setup Complete!"
@@ -199,3 +237,6 @@ echo ""
 echo "- LNbits 2 (litd-2): http://localhost:5002"
 echo "  • Taproot Assets: http://localhost:5002/taproot_assets"
 echo "  • Bitcoin Switch: http://localhost:5002/bitcoinswitch"
+echo ""
+echo "- LNbits 4 (RFQ Payer): http://localhost:5004"
+echo "  • Sats-only wallet for testing RFQ payments"

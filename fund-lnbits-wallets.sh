@@ -100,6 +100,34 @@ else
 fi
 
 echo ""
+
+# Fund LNbits-4 (RFQ payer - sats only, connected to lnd-rfq-payer)
+echo "📍 Funding LNbits-4 (RFQ Payer)..."
+docker cp lightning-dev-env-lnbits-4-1:/app/data/database.sqlite3 /tmp/lb4.db 2>/dev/null
+LNB4_KEY=$(sqlite3 /tmp/lb4.db "SELECT adminkey FROM wallets ORDER BY id LIMIT 1;" 2>/dev/null)
+rm -f /tmp/lb4.db
+
+if [ -n "$LNB4_KEY" ]; then
+  # Bitcoin funding only (this is a sats-only node for RFQ testing)
+  echo "  💵 Funding with 500,000 sats..."
+  BTC_INV=$(docker compose exec -T lnbits-4 curl -s -X POST "http://localhost:5000/api/v1/payments" \
+    -H "X-Api-Key: $LNB4_KEY" \
+    -H "Content-Type: application/json" \
+    -d '{"out": false, "amount": 500000, "memo": "Fund RFQ payer wallet"}' | jq -r '.bolt11')
+
+  if [ -n "$BTC_INV" ] && [ "$BTC_INV" != "null" ]; then
+    # Pay from litd-1 (has channel to lnd-rfq-payer)
+    docker compose exec -T litd-1 lncli --network=regtest payinvoice --force "$BTC_INV" > /dev/null 2>&1
+    sleep 2
+    echo "  ✅ Bitcoin funded"
+  else
+    echo "  ⚠️  Bitcoin invoice failed, skipping"
+  fi
+else
+  echo "  ⚠️  Could not get LNbits-4 admin key, skipping"
+fi
+
+echo ""
 echo "✅ LNbits wallets funded!"
 echo ""
 echo "Balances:"
@@ -111,6 +139,9 @@ LNB1_ASSET=$(docker compose exec -T lnbits-1 curl -s "http://localhost:5000/tapr
 LNB2_BTC=$(docker compose exec -T lnbits-2 curl -s "http://localhost:5000/api/v1/wallet" -H "X-Api-Key: $LNB2_KEY" | jq -r '.balance // 0')
 LNB2_ASSET=$(docker compose exec -T lnbits-2 curl -s "http://localhost:5000/taproot_assets/api/v1/taproot/listassets" -H "X-Api-Key: $LNB2_KEY" | jq -r '.[0].user_balance // 0')
 
+LNB4_BTC=$(docker compose exec -T lnbits-4 curl -s "http://localhost:5000/api/v1/wallet" -H "X-Api-Key: $LNB4_KEY" 2>/dev/null | jq -r '.balance // 0')
+
 echo "LNbits-1: $((LNB1_BTC / 1000)) sats, $LNB1_ASSET asset units"
 echo "LNbits-2: $((LNB2_BTC / 1000)) sats, $LNB2_ASSET asset units"
+echo "LNbits-4 (RFQ Payer): $((LNB4_BTC / 1000)) sats (sats-only)"
 echo ""

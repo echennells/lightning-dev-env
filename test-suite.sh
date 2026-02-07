@@ -652,12 +652,12 @@ if [ -n "$LNBITS2_ADMIN_KEY" ] && [ -n "$ASSET_SWITCH_ID" ] && [ -n "$LNURL_CALL
 
   echo "LNbits-2 asset balance before: $LNBITS2_ASSET_BEFORE units"
 
-  # Request an ASSET invoice from the switch (same as TEST 13)
+  # Request an ASSET invoice from the switch (same as TEST 13 - 200 asset units)
   echo "Requesting Taproot Asset invoice from LNURL callback..."
   if [[ "$LNURL_CALLBACK" == *"?"* ]]; then
-    RFQ_CALLBACK="${LNURL_CALLBACK}&amount=100&asset_id=$ASSET_ID"
+    RFQ_CALLBACK="${LNURL_CALLBACK}&amount=200&asset_id=$ASSET_ID"
   else
-    RFQ_CALLBACK="${LNURL_CALLBACK}?amount=100&asset_id=$ASSET_ID"
+    RFQ_CALLBACK="${LNURL_CALLBACK}?amount=200&asset_id=$ASSET_ID"
   fi
 
   RFQ_RESPONSE=$(curl -k -s --resolve "lnbits-https-proxy:443:127.0.0.1" \
@@ -685,10 +685,11 @@ if [ -n "$LNBITS2_ADMIN_KEY" ] && [ -n "$ASSET_SWITCH_ID" ] && [ -n "$LNURL_CALL
       ASSET_RECEIVED=$((LNBITS2_ASSET_AFTER - LNBITS2_ASSET_BEFORE))
 
       # Verify receiver got assets (paid with sats, received assets via RFQ)
-      if [ "$ASSET_RECEIVED" -ge 90 ] && [ "$ASSET_RECEIVED" -le 110 ]; then
+      # Expecting ~200 assets (same as TEST 13)
+      if [ "$ASSET_RECEIVED" -ge 190 ] && [ "$ASSET_RECEIVED" -le 210 ]; then
         pass_test "RFQ payment succeeded (paid sats, receiver got $ASSET_RECEIVED asset units)"
       else
-        fail_test "RFQ conversion incorrect" "Expected ~100 assets, got $ASSET_RECEIVED"
+        fail_test "RFQ conversion incorrect" "Expected ~200 assets, got $ASSET_RECEIVED"
       fi
     else
       fail_test "RFQ payment failed" "$RFQ_PAYMENT"
