@@ -73,10 +73,15 @@ openssl req -x509 -newkey rsa:4096 -nodes \
   -keyout ssl/lnbits.key \
   -out ssl/lnbits.crt \
   -days 365 \
-  -subj "/C=US/ST=Test/L=Test/O=Test/CN=lnbits.example.com" \
-  -addext "subjectAltName=DNS:lnbits.example.com,DNS:localhost" 2>/dev/null
+  -subj "/C=US/ST=Test/L=Test/O=Test/CN=lnbits-https-proxy" \
+  -addext "subjectAltName=DNS:lnbits-https-proxy,DNS:lnbits.example.com,DNS:localhost" 2>/dev/null
 
-echo "✅ SSL certificates generated"
+echo "Creating combined CA bundle (system CAs + self-signed cert)..."
+# Download Mozilla CA bundle and append our self-signed cert
+curl -s https://curl.se/ca/cacert.pem > ssl/combined-ca-bundle.crt
+cat ssl/lnbits.crt >> ssl/combined-ca-bundle.crt
+
+echo "✅ SSL certificates and CA bundle generated"
 echo ""
 
 # Start containers

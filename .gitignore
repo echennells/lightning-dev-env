@@ -18,3 +18,4 @@ lnurlp/
 withdraw/
 lnurlFlip/
 lnbits_keys.env
+ssl/combined-ca-bundle.crt

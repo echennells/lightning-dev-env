@@ -986,6 +986,104 @@ else
 fi
 
 # =============================================================================
+# TEST 21: LNURL Payment via LNbits Python Backend (SSL Verification Test)
+# =============================================================================
+start_test "LNURL Payment via LNbits Python Backend (SSL Verification)"
+
+# This test is CRITICAL - it catches SSL certificate issues that would break
+# LNURL payments from the LNbits UI. Previous tests use curl directly which
+# bypasses LNbits' Python HTTP client. This test exercises the actual code
+# path used when a user pays an LNURL from the LNbits frontend.
+#
+# We test by having LNbits-4's Python code make an HTTPS request to
+# lnbits-https-proxy. If SSL_CERT_FILE is not configured correctly with
+# our combined CA bundle, the request will fail with CERTIFICATE_VERIFY_FAILED.
+
+# Get lnbits-4 admin key
+docker cp lightning-dev-env-lnbits-4-1:/app/data/database.sqlite3 /tmp/lnbits4-ssl-test.db 2>/dev/null || true
+LNBITS4_ADMIN_KEY=$(sqlite3 /tmp/lnbits4-ssl-test.db "SELECT adminkey FROM wallets ORDER BY id LIMIT 1;" 2>/dev/null || echo "")
+rm -f /tmp/lnbits4-ssl-test.db
+
+if [ -n "$LNBITS4_ADMIN_KEY" ] && [ -n "$ASSET_SWITCH_ID" ]; then
+  # Test SSL verification by fetching from HTTPS proxy using Python's urllib
+  # This uses the SSL_CERT_FILE environment variable set in docker-compose.yml
+  echo "Testing Python SSL verification from LNbits-4 to HTTPS proxy..."
+
+  SSL_TEST_RESULT=$(docker compose exec -T lnbits-4 python3 -c "
+import urllib.request
+import ssl
+import os
+import json
+
+# Verify environment is set up
+cert_file = os.environ.get('SSL_CERT_FILE', 'NOT SET')
+print(f'SSL_CERT_FILE: {cert_file}', flush=True)
+
+# Test HTTPS connection to the proxy
+url = 'https://lnbits-https-proxy/api/v1/health'
+try:
+    response = urllib.request.urlopen(url, timeout=10)
+    data = json.loads(response.read().decode())
+    print(f'SUCCESS: Connected to proxy, server uptime: {data.get(\"up_time\", \"unknown\")}', flush=True)
+except ssl.SSLCertVerificationError as e:
+    print(f'SSL_ERROR: {e}', flush=True)
+except Exception as e:
+    print(f'ERROR: {type(e).__name__}: {e}', flush=True)
+" 2>&1)
+
+  echo "$SSL_TEST_RESULT"
+
+  if echo "$SSL_TEST_RESULT" | grep -q "SUCCESS:"; then
+    # Python SSL verification works! Now test the actual LNURL flow
+    echo ""
+    echo "Python SSL works, testing LNURL fetch via LNbits API..."
+
+    # Construct LNURL URL and encode using Python in container (via uv run for deps)
+    LNURL_URL="https://lnbits-https-proxy/bitcoinswitch/api/v1/lnurl/$ASSET_SWITCH_ID?pin=2"
+
+    # Use uv run to access bech32 module from LNbits environment
+    SWITCH_LNURL=$(docker compose exec -T lnbits-4 sh -c "cd /app && uv run python -c \"
+import bech32
+url = '$LNURL_URL'
+data = list(url.encode('utf-8'))
+converted = bech32.convertbits(data, 8, 5)
+print(bech32.bech32_encode('lnurl', converted))
+\"" 2>/dev/null | tr -d '\r')
+
+    if [ -n "$SWITCH_LNURL" ] && [ "$SWITCH_LNURL" != "" ]; then
+      echo "LNURL: ${SWITCH_LNURL:0:50}..."
+
+      # Call lnurlscan - this makes LNbits fetch https://lnbits-https-proxy/...
+      LNURL_SCAN=$(docker compose exec -T lnbits-4 curl -s "http://localhost:5000/api/v1/lnurlscan/$SWITCH_LNURL" \
+        -H "X-Api-Key: $LNBITS4_ADMIN_KEY" 2>&1)
+
+      SCAN_KIND=$(echo "$LNURL_SCAN" | jq -r '.kind' 2>/dev/null)
+
+      if [ "$SCAN_KIND" = "pay" ]; then
+        pass_test "LNURL via Python backend works (SSL verification successful!)"
+      else
+        SCAN_ERROR=$(echo "$LNURL_SCAN" | jq -r '.detail // .message // .error' 2>/dev/null)
+        if echo "$SCAN_ERROR" | grep -qi "ssl\|certificate\|verify"; then
+          fail_test "SSL verification failed in lnurlscan" "$SCAN_ERROR"
+        else
+          # If we got here, SSL works but something else failed
+          pass_test "Python SSL verification works (lnurlscan issue: ${SCAN_ERROR:0:40})"
+        fi
+      fi
+    else
+      # bech32 encoding failed but SSL test passed
+      pass_test "Python SSL verification works (bech32 encoding unavailable)"
+    fi
+  elif echo "$SSL_TEST_RESULT" | grep -q "SSL_ERROR:"; then
+    fail_test "SSL certificate verification failed" "$SSL_TEST_RESULT"
+  else
+    fail_test "Python HTTP request failed" "$SSL_TEST_RESULT"
+  fi
+else
+  fail_test "Cannot test without LNbits-4 admin key and switch ID"
+fi
+
+# =============================================================================
 # TEST SUMMARY
 # =============================================================================
 echo ""

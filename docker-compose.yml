@@ -220,6 +220,9 @@ services:
       # LNBITS_EXTENSIONS_DEFAULT_INSTALL doesn't work in v1.2.1, use API instead
       - LNBITS_BASEURL=https://lnbits-https-proxy
       - HTTPX_VERIFY=false
+      # Trust the self-signed HTTPS proxy cert for LNURL (combined with system CAs)
+      - SSL_CERT_FILE=/app/ssl/combined-ca-bundle.crt
+      - REQUESTS_CA_BUNDLE=/app/ssl/combined-ca-bundle.crt
       # Custom extension repositories
       # Taproot Assets configuration for LNbits (if supported)
       - TAPD_HOST=litd-1:10009
@@ -230,6 +233,7 @@ services:
       - lnbits-1-data:/app/data
       - ./data/litd-1:/app/lnd:ro
       - ./data/tapd-1:/app/tapd:ro
+      - ./ssl:/app/ssl:ro
     ports:
       - "5001:5000"
 
@@ -255,6 +259,9 @@ services:
       - SUPER_USER=e08a3313322a4514af75d488bcc27eef
       - LNBITS_BASEURL=https://lnbits-https-proxy
       - HTTPX_VERIFY=false
+      # Trust the self-signed HTTPS proxy cert for LNURL (combined with system CAs)
+      - SSL_CERT_FILE=/app/ssl/combined-ca-bundle.crt
+      - REQUESTS_CA_BUNDLE=/app/ssl/combined-ca-bundle.crt
       # Custom extension repositories
       # Taproot Assets configuration for LNbits (if supported)
       - TAPD_HOST=litd-2:10010
@@ -265,6 +272,7 @@ services:
       - lnbits-2-data:/app/data
       - ./data/litd-2:/app/lnd:ro
       - ./data/tapd-2:/app/tapd:ro
+      - ./ssl:/app/ssl:ro
     ports:
       - "5002:5000"
 
@@ -320,9 +328,13 @@ services:
       - SUPER_USER=a08a3313322a4514af75d488bcc27ee1
       - LNBITS_BASEURL=https://lnbits-https-proxy
       - HTTPX_VERIFY=false
+      # Trust the self-signed HTTPS proxy cert for LNURL (combined with system CAs)
+      - SSL_CERT_FILE=/app/ssl/combined-ca-bundle.crt
+      - REQUESTS_CA_BUNDLE=/app/ssl/combined-ca-bundle.crt
     volumes:
       - lnbits-4-data:/app/data
       - ./data/lnd-rfq-payer:/app/lnd:ro
+      - ./ssl:/app/ssl:ro
     ports:
       - "5004:5000"
 
