@@ -89,6 +89,10 @@ echo "Starting Docker containers..."
 # Default --pull policy respects pull_policy in docker-compose.yml
 docker compose up -d
 
+# Restart HTTPS proxy to ensure it picks up fresh SSL certs (in case containers were already running)
+echo "Restarting HTTPS proxy to load fresh SSL certificates..."
+docker compose restart lnbits-https-proxy
+
 # Wait for services to fully initialize
 echo "Waiting for services to start (including tapd)..."
 sleep 60

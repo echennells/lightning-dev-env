@@ -223,6 +223,8 @@ services:
       # Trust the self-signed HTTPS proxy cert for LNURL (combined with system CAs)
       - SSL_CERT_FILE=/app/ssl/combined-ca-bundle.crt
       - REQUESTS_CA_BUNDLE=/app/ssl/combined-ca-bundle.crt
+      # Allow LNURL callbacks to internal proxy (no TLD)
+      - LNBITS_CALLBACK_URL_RULES=["https?://.*"]
       # Custom extension repositories
       # Taproot Assets configuration for LNbits (if supported)
       - TAPD_HOST=litd-1:10009
@@ -331,6 +333,8 @@ services:
       # Trust the self-signed HTTPS proxy cert for LNURL (combined with system CAs)
       - SSL_CERT_FILE=/app/ssl/combined-ca-bundle.crt
       - REQUESTS_CA_BUNDLE=/app/ssl/combined-ca-bundle.crt
+      # Allow LNURL callbacks to internal proxy (no TLD)
+      - LNBITS_CALLBACK_URL_RULES=["https?://.*"]
     volumes:
       - lnbits-4-data:/app/data
       - ./data/lnd-rfq-payer:/app/lnd:ro
@@ -347,7 +351,7 @@ services:
       - lnbits-1
     restart: unless-stopped
     ports:
-      - "5443:443"
+      - "5443:5443"
     volumes:
       - ./nginx-lnbits.conf:/etc/nginx/conf.d/default.conf:ro
       - ./ssl:/etc/ssl/certs:ro

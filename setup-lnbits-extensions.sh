@@ -160,9 +160,16 @@ INSERT OR REPLACE INTO extensions ("user", extension, active) VALUES
 SQL
   fi
 
+  # Fix callback URL rules to allow internal hostnames without TLD (e.g., lnbits-https-proxy)
+  sqlite3 /tmp/enable-extensions-$LITD_NAME.db << SQL
+-- Allow LNURL callbacks to internal proxy hostnames (no TLD required)
+UPDATE system_settings SET value = '["https?://.*"]' WHERE id = 'lnbits_callback_url_rules';
+SQL
+
   docker cp /tmp/enable-extensions-$LITD_NAME.db "$LNBITS_CONTAINER:/app/data/database.sqlite3"
   rm /tmp/enable-extensions-$LITD_NAME.db
   echo "✅ Extensions enabled in database"
+  echo "✅ Callback URL rules fixed for LNURL compatibility"
 
   # Final restart
   echo "Final restart..."
@@ -225,6 +232,18 @@ if [ -n "$ACCESS_TOKEN" ] && [ "$ACCESS_TOKEN" != "null" ]; then
 else
   echo "ℹ️  Admin user may already exist for LNbits-4"
 fi
+
+# Fix callback URL rules for lnbits-4 (needed for LNURL payments)
+echo "Fixing callback URL rules for LNbits-4..."
+docker cp lightning-dev-env-lnbits-4-1:/app/data/database.sqlite3 /tmp/lnbits4-fix.db
+sqlite3 /tmp/lnbits4-fix.db << SQL
+-- Allow LNURL callbacks to internal proxy hostnames (no TLD required)
+UPDATE system_settings SET value = '["https?://.*"]' WHERE id = 'lnbits_callback_url_rules';
+SQL
+docker cp /tmp/lnbits4-fix.db lightning-dev-env-lnbits-4-1:/app/data/database.sqlite3
+rm /tmp/lnbits4-fix.db
+docker restart lightning-dev-env-lnbits-4-1
+echo "✅ Callback URL rules fixed for LNbits-4"
 
 echo ""
 echo "=========================================="

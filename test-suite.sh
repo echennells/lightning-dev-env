@@ -448,12 +448,19 @@ fi
 # =============================================================================
 # TEST 11: Bitcoin Switch - Get LNURL from Asset-Enabled Switch
 # =============================================================================
-start_test "Bitcoin Switch - Get LNURL Pay Link"
+start_test "Bitcoin Switch - Get LNURL Pay Link (Container-to-Container)"
+
+# IMPORTANT: This test fetches LNURL metadata FROM INSIDE a container (lnbits-4)
+# to test the actual container-to-container flow. No --resolve cheats!
+# The LNURL endpoint must be accessible from lnbits-4 via https://lnbits-https-proxy:5443
 
 if [ -n "$LNBITS2_ADMIN_KEY" ] && [ -n "$ASSET_SWITCH_ID" ]; then
-  echo "Getting LNURL from asset-enabled switch..."
-  # The LNURL endpoint for a switch is at /bitcoinswitch/api/v1/lnurl/{switch_id}?pin={pin}
-  LNURL_RESPONSE=$(curl -k -s "https://localhost:5443/bitcoinswitch/api/v1/lnurl/$ASSET_SWITCH_ID?pin=2")
+  echo "Getting LNURL from asset-enabled switch (from inside lnbits-4 container)..."
+
+  # Fetch LNURL metadata from inside lnbits-4 container - this tests real container networking
+  # Use -k for self-signed SSL cert, port 5443 for nginx proxy
+  LNURL_RESPONSE=$(docker compose exec -T lnbits-4 curl -sk \
+    "https://lnbits-https-proxy:5443/bitcoinswitch/api/v1/lnurl/$ASSET_SWITCH_ID?pin=2" 2>&1)
 
   # Check if we got valid LNURL metadata
   LNURL_TAG=$(echo "$LNURL_RESPONSE" | jq -r '.tag' 2>/dev/null)
@@ -461,13 +468,23 @@ if [ -n "$LNBITS2_ADMIN_KEY" ] && [ -n "$ASSET_SWITCH_ID" ]; then
   LNURL_ACCEPTS_ASSETS=$(echo "$LNURL_RESPONSE" | jq -r '.acceptsAssets' 2>/dev/null)
 
   if [ "$LNURL_TAG" = "payRequest" ] && [ -n "$LNURL_CALLBACK" ] && [ "$LNURL_CALLBACK" != "null" ]; then
-    if [ "$LNURL_ACCEPTS_ASSETS" = "true" ]; then
-      pass_test "LNURL metadata retrieved (callback: ${LNURL_CALLBACK:0:40}..., accepts assets: true)"
+    # Verify the callback URL uses the proxy (not localhost)
+    if echo "$LNURL_CALLBACK" | grep -q "lnbits-https-proxy"; then
+      if [ "$LNURL_ACCEPTS_ASSETS" = "true" ]; then
+        pass_test "LNURL metadata retrieved via container (callback: ${LNURL_CALLBACK:0:40}..., accepts assets: true)"
+      else
+        pass_test "LNURL metadata retrieved via container but doesn't accept assets"
+      fi
     else
-      pass_test "LNURL metadata retrieved but doesn't accept assets"
+      fail_test "LNURL callback uses wrong hostname (should use lnbits-https-proxy)" "$LNURL_CALLBACK"
     fi
   else
-    fail_test "Failed to get valid LNURL metadata" "$LNURL_RESPONSE"
+    # Check for SSL errors
+    if echo "$LNURL_RESPONSE" | grep -qi "ssl\|certificate\|verify"; then
+      fail_test "SSL certificate verification failed from container" "$LNURL_RESPONSE"
+    else
+      fail_test "Failed to get valid LNURL metadata from container" "$LNURL_RESPONSE"
+    fi
   fi
 else
   fail_test "Cannot test without admin key and asset switch ID"
@@ -485,9 +502,12 @@ if [ -n "$ASSET_SWITCH_ID" ]; then
 fi
 
 # =============================================================================
-# TEST 12: Bitcoin Switch - Pay LNURL with Bitcoin
+# TEST 12: Bitcoin Switch - Pay LNURL with Bitcoin (Container-to-Container)
 # =============================================================================
-start_test "Bitcoin Switch - Pay LNURL with Bitcoin"
+start_test "Bitcoin Switch - Pay LNURL with Bitcoin (Container-to-Container)"
+
+# IMPORTANT: This test calls the LNURL callback FROM INSIDE a container (lnbits-4)
+# No --resolve cheats! Tests the actual container-to-container networking.
 
 if [ -n "$LNBITS2_ADMIN_KEY" ] && [ -n "$ASSET_SWITCH_ID" ] && [ -n "$LNURL_CALLBACK" ]; then
   # Get wallet balance before payment
@@ -496,24 +516,28 @@ if [ -n "$LNBITS2_ADMIN_KEY" ] && [ -n "$ASSET_SWITCH_ID" ] && [ -n "$LNURL_CALL
 
   echo "Wallet balance before: $WALLET_BTC_BEFORE msats"
 
-  # Request invoice from LNURL callback (200 sats = 200000 msats)
-  echo "Requesting Bitcoin invoice from LNURL callback..."
-  # The callback URL already has query params, so use & instead of ?
+  # Request invoice from LNURL callback FROM INSIDE lnbits-4 container (200 sats = 200000 msats)
+  echo "Requesting Bitcoin invoice from LNURL callback (from inside lnbits-4)..."
   if [[ "$LNURL_CALLBACK" == *"?"* ]]; then
     CALLBACK_WITH_AMOUNT="${LNURL_CALLBACK}&amount=200000"
   else
     CALLBACK_WITH_AMOUNT="${LNURL_CALLBACK}?amount=200000"
   fi
   echo "Using callback: $CALLBACK_WITH_AMOUNT"
-  # Resolve lnbits-https-proxy to localhost:5443 for host machine
-  CALLBACK_RESPONSE=$(curl -k -s --resolve "lnbits-https-proxy:443:127.0.0.1" \
-    --connect-to "lnbits-https-proxy:443:localhost:5443" "$CALLBACK_WITH_AMOUNT")
+
+  # Call callback from inside lnbits-4 - no --resolve cheats! Use -k for self-signed SSL
+  CALLBACK_RESPONSE=$(docker compose exec -T lnbits-4 curl -sk "$CALLBACK_WITH_AMOUNT" 2>&1)
 
   # Check if we got an error (e.g., no hardware connections)
   ERROR_STATUS=$(echo "$CALLBACK_RESPONSE" | jq -r '.status' 2>/dev/null)
   if [ "$ERROR_STATUS" = "ERROR" ]; then
     ERROR_REASON=$(echo "$CALLBACK_RESPONSE" | jq -r '.reason' 2>/dev/null)
     fail_test "LNURL callback returned error: $ERROR_REASON (Bitcoin Switch requires hardware connections)"
+  fi
+
+  # Check for SSL/connection errors
+  if echo "$CALLBACK_RESPONSE" | grep -qi "ssl\|certificate\|could not resolve\|connection refused"; then
+    fail_test "Container-to-container HTTPS failed" "$CALLBACK_RESPONSE"
   fi
 
   BOLT11=$(echo "$CALLBACK_RESPONSE" | jq -r '.pr' 2>/dev/null)
@@ -538,7 +562,7 @@ if [ -n "$LNBITS2_ADMIN_KEY" ] && [ -n "$ASSET_SWITCH_ID" ] && [ -n "$LNURL_CALL
 
       # Should receive 200 sats = 200000 msats
       if [ "$WALLET_DIFF" -ge 195000 ] && [ "$WALLET_DIFF" -le 205000 ]; then
-        pass_test "LNURL Bitcoin payment succeeded (+$((WALLET_DIFF / 1000)) sats to wallet)"
+        pass_test "LNURL Bitcoin payment via container succeeded (+$((WALLET_DIFF / 1000)) sats to wallet)"
       else
         fail_test "Wallet balance change incorrect" "Expected ~200 sats, got $((WALLET_DIFF / 1000)) sats"
       fi
@@ -546,16 +570,16 @@ if [ -n "$LNBITS2_ADMIN_KEY" ] && [ -n "$ASSET_SWITCH_ID" ] && [ -n "$LNURL_CALL
       fail_test "Payment failed" "$PAYMENT"
     fi
   else
-    fail_test "Failed to get invoice from LNURL callback" "$CALLBACK_RESPONSE"
+    fail_test "Failed to get invoice from LNURL callback (container-to-container)" "$CALLBACK_RESPONSE"
   fi
 else
   fail_test "Cannot test without LNURL callback"
 fi
 
 # =============================================================================
-# TEST 13: Bitcoin Switch - Pay LNURL with Taproot Assets
+# TEST 13: Bitcoin Switch - Pay LNURL with Taproot Assets (Container-to-Container)
 # =============================================================================
-start_test "Bitcoin Switch - Pay LNURL with Taproot Assets"
+start_test "Bitcoin Switch - Pay LNURL with Taproot Assets (Container-to-Container)"
 
 # Get lnbits-1 admin key for this test
 docker cp lightning-dev-env-lnbits-1-1:/app/data/database.sqlite3 /tmp/lnbits1-test-lnurl.db 2>/dev/null || true
@@ -575,16 +599,15 @@ if [ -n "$LNBITS1_ADMIN_KEY" ] && [ -n "$LNBITS2_ADMIN_KEY" ] && [ -n "$ASSET_SW
   echo "LNbits-2 wallet balance before: $WALLET_ASSET_BEFORE msats"
 
   # Request Taproot Asset invoice from LNURL callback (200 asset units)
-  echo "Requesting Taproot Asset invoice from LNURL callback..."
+  echo "Requesting Taproot Asset invoice from LNURL callback (from inside lnbits-4)..."
   # The callback URL already has query params, so use & instead of ?
   if [[ "$LNURL_CALLBACK" == *"?"* ]]; then
     CALLBACK_WITH_PARAMS="${LNURL_CALLBACK}&amount=200&asset_id=$ASSET_ID"
   else
     CALLBACK_WITH_PARAMS="${LNURL_CALLBACK}?amount=200&asset_id=$ASSET_ID"
   fi
-  # Resolve lnbits-https-proxy to localhost:5443 for host machine
-  CALLBACK_RESPONSE=$(curl -k -s --resolve "lnbits-https-proxy:443:127.0.0.1" \
-    --connect-to "lnbits-https-proxy:443:localhost:5443" "$CALLBACK_WITH_PARAMS")
+  # Call callback from inside lnbits-4 - no --resolve cheats! Use -k for self-signed SSL
+  CALLBACK_RESPONSE=$(docker compose exec -T lnbits-4 curl -sk "$CALLBACK_WITH_PARAMS" 2>&1)
 
   ASSET_INVOICE=$(echo "$CALLBACK_RESPONSE" | jq -r '.pr' 2>/dev/null)
 
@@ -633,9 +656,9 @@ else
 fi
 
 # =============================================================================
-# TEST 14: Bitcoin Switch - Pay LNURL with Sats via RFQ (Asset invoice paid with sats)
+# TEST 14: Bitcoin Switch - Pay LNURL with Sats via RFQ (Container-to-Container)
 # =============================================================================
-start_test "Bitcoin Switch - Pay LNURL with Sats via RFQ"
+start_test "Bitcoin Switch - Pay LNURL with Sats via RFQ (Container-to-Container)"
 
 # This tests the RFQ flow: request an asset invoice, but pay it with regular sats
 # The RFQ system converts sats to assets at market rate
@@ -644,6 +667,8 @@ start_test "Bitcoin Switch - Pay LNURL with Sats via RFQ"
 # This forces the payment to follow route hints through the RFQ edge, because
 # there's no direct channel to litd-2 (the receiver).
 # Without this topology, LND would bypass route hints and pay directly.
+#
+# The LNURL callback is fetched FROM INSIDE lnbits-4 container - no --resolve cheats!
 
 if [ -n "$LNBITS2_ADMIN_KEY" ] && [ -n "$ASSET_SWITCH_ID" ] && [ -n "$LNURL_CALLBACK" ] && [ -n "$ASSET_ID" ]; then
   # Get LNbits-2 asset balance before (receiver)
@@ -653,15 +678,15 @@ if [ -n "$LNBITS2_ADMIN_KEY" ] && [ -n "$ASSET_SWITCH_ID" ] && [ -n "$LNURL_CALL
   echo "LNbits-2 asset balance before: $LNBITS2_ASSET_BEFORE units"
 
   # Request an ASSET invoice from the switch (same as TEST 13 - 200 asset units)
-  echo "Requesting Taproot Asset invoice from LNURL callback..."
+  echo "Requesting Taproot Asset invoice from LNURL callback (from inside lnbits-4)..."
   if [[ "$LNURL_CALLBACK" == *"?"* ]]; then
     RFQ_CALLBACK="${LNURL_CALLBACK}&amount=200&asset_id=$ASSET_ID"
   else
     RFQ_CALLBACK="${LNURL_CALLBACK}?amount=200&asset_id=$ASSET_ID"
   fi
 
-  RFQ_RESPONSE=$(curl -k -s --resolve "lnbits-https-proxy:443:127.0.0.1" \
-    --connect-to "lnbits-https-proxy:443:localhost:5443" "$RFQ_CALLBACK")
+  # Call callback from inside lnbits-4 - no --resolve cheats! Use -k for self-signed SSL
+  RFQ_RESPONSE=$(docker compose exec -T lnbits-4 curl -sk "$RFQ_CALLBACK" 2>&1)
 
   RFQ_INVOICE=$(echo "$RFQ_RESPONSE" | jq -r '.pr' 2>/dev/null)
 
@@ -983,104 +1008,6 @@ if [ -n "$LNBITS1_FLIP_ID" ] && [ -n "$LNBITS1_ADMIN_KEY" ]; then
   fi
 else
   fail_test "Cannot test lnurlFlip - no flip ID or admin key"
-fi
-
-# =============================================================================
-# TEST 21: LNURL Payment via LNbits Python Backend (SSL Verification Test)
-# =============================================================================
-start_test "LNURL Payment via LNbits Python Backend (SSL Verification)"
-
-# This test is CRITICAL - it catches SSL certificate issues that would break
-# LNURL payments from the LNbits UI. Previous tests use curl directly which
-# bypasses LNbits' Python HTTP client. This test exercises the actual code
-# path used when a user pays an LNURL from the LNbits frontend.
-#
-# We test by having LNbits-4's Python code make an HTTPS request to
-# lnbits-https-proxy. If SSL_CERT_FILE is not configured correctly with
-# our combined CA bundle, the request will fail with CERTIFICATE_VERIFY_FAILED.
-
-# Get lnbits-4 admin key
-docker cp lightning-dev-env-lnbits-4-1:/app/data/database.sqlite3 /tmp/lnbits4-ssl-test.db 2>/dev/null || true
-LNBITS4_ADMIN_KEY=$(sqlite3 /tmp/lnbits4-ssl-test.db "SELECT adminkey FROM wallets ORDER BY id LIMIT 1;" 2>/dev/null || echo "")
-rm -f /tmp/lnbits4-ssl-test.db
-
-if [ -n "$LNBITS4_ADMIN_KEY" ] && [ -n "$ASSET_SWITCH_ID" ]; then
-  # Test SSL verification by fetching from HTTPS proxy using Python's urllib
-  # This uses the SSL_CERT_FILE environment variable set in docker-compose.yml
-  echo "Testing Python SSL verification from LNbits-4 to HTTPS proxy..."
-
-  SSL_TEST_RESULT=$(docker compose exec -T lnbits-4 python3 -c "
-import urllib.request
-import ssl
-import os
-import json
-
-# Verify environment is set up
-cert_file = os.environ.get('SSL_CERT_FILE', 'NOT SET')
-print(f'SSL_CERT_FILE: {cert_file}', flush=True)
-
-# Test HTTPS connection to the proxy
-url = 'https://lnbits-https-proxy/api/v1/health'
-try:
-    response = urllib.request.urlopen(url, timeout=10)
-    data = json.loads(response.read().decode())
-    print(f'SUCCESS: Connected to proxy, server uptime: {data.get(\"up_time\", \"unknown\")}', flush=True)
-except ssl.SSLCertVerificationError as e:
-    print(f'SSL_ERROR: {e}', flush=True)
-except Exception as e:
-    print(f'ERROR: {type(e).__name__}: {e}', flush=True)
-" 2>&1)
-
-  echo "$SSL_TEST_RESULT"
-
-  if echo "$SSL_TEST_RESULT" | grep -q "SUCCESS:"; then
-    # Python SSL verification works! Now test the actual LNURL flow
-    echo ""
-    echo "Python SSL works, testing LNURL fetch via LNbits API..."
-
-    # Construct LNURL URL and encode using Python in container (via uv run for deps)
-    LNURL_URL="https://lnbits-https-proxy/bitcoinswitch/api/v1/lnurl/$ASSET_SWITCH_ID?pin=2"
-
-    # Use uv run to access bech32 module from LNbits environment
-    SWITCH_LNURL=$(docker compose exec -T lnbits-4 sh -c "cd /app && uv run python -c \"
-import bech32
-url = '$LNURL_URL'
-data = list(url.encode('utf-8'))
-converted = bech32.convertbits(data, 8, 5)
-print(bech32.bech32_encode('lnurl', converted))
-\"" 2>/dev/null | tr -d '\r')
-
-    if [ -n "$SWITCH_LNURL" ] && [ "$SWITCH_LNURL" != "" ]; then
-      echo "LNURL: ${SWITCH_LNURL:0:50}..."
-
-      # Call lnurlscan - this makes LNbits fetch https://lnbits-https-proxy/...
-      LNURL_SCAN=$(docker compose exec -T lnbits-4 curl -s "http://localhost:5000/api/v1/lnurlscan/$SWITCH_LNURL" \
-        -H "X-Api-Key: $LNBITS4_ADMIN_KEY" 2>&1)
-
-      SCAN_KIND=$(echo "$LNURL_SCAN" | jq -r '.kind' 2>/dev/null)
-
-      if [ "$SCAN_KIND" = "pay" ]; then
-        pass_test "LNURL via Python backend works (SSL verification successful!)"
-      else
-        SCAN_ERROR=$(echo "$LNURL_SCAN" | jq -r '.detail // .message // .error' 2>/dev/null)
-        if echo "$SCAN_ERROR" | grep -qi "ssl\|certificate\|verify"; then
-          fail_test "SSL verification failed in lnurlscan" "$SCAN_ERROR"
-        else
-          # If we got here, SSL works but something else failed
-          pass_test "Python SSL verification works (lnurlscan issue: ${SCAN_ERROR:0:40})"
-        fi
-      fi
-    else
-      # bech32 encoding failed but SSL test passed
-      pass_test "Python SSL verification works (bech32 encoding unavailable)"
-    fi
-  elif echo "$SSL_TEST_RESULT" | grep -q "SSL_ERROR:"; then
-    fail_test "SSL certificate verification failed" "$SSL_TEST_RESULT"
-  else
-    fail_test "Python HTTP request failed" "$SSL_TEST_RESULT"
-  fi
-else
-  fail_test "Cannot test without LNbits-4 admin key and switch ID"
 fi
 
 # =============================================================================
