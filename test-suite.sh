@@ -1011,6 +1011,251 @@ else
 fi
 
 # =============================================================================
+# TEST 21: Laisee - Create Envelope and Serve LNURL-Pay
+# =============================================================================
+start_test "Laisee - Create Envelope and Serve LNURL-Pay"
+
+# Get lnbits-1 admin key
+docker cp lightning-dev-env-lnbits-1-1:/app/data/database.sqlite3 /tmp/lnbits1-laisee.db 2>/dev/null || true
+LNBITS1_ADMIN_KEY=$(sqlite3 /tmp/lnbits1-laisee.db "SELECT adminkey FROM wallets ORDER BY id LIMIT 1;" 2>/dev/null || echo "")
+rm -f /tmp/lnbits1-laisee.db
+
+# Amount the envelope gets funded with; withdraw must match it exactly
+LAISEE_AMOUNT=100
+LAISEE_ID=""
+LAISEE_HASH=""
+
+if [ -n "$LNBITS1_ADMIN_KEY" ]; then
+  LAISEE_CREATE=$(docker compose exec -T lnbits-1 curl -s -X POST "http://localhost:5000/laisee/api/v1/laisees" \
+    -H "X-Api-Key: $LNBITS1_ADMIN_KEY" \
+    -H "Content-Type: application/json" \
+    -d '{"title": "Test Suite Red Envelope", "min_sats": 10, "max_sats": 1000, "allow_comment": true}')
+
+  LAISEE_ID=$(echo "$LAISEE_CREATE" | jq -r '.id' 2>/dev/null)
+  LAISEE_HASH=$(echo "$LAISEE_CREATE" | jq -r '.unique_hash' 2>/dev/null)
+
+  if [ -n "$LAISEE_HASH" ] && [ "$LAISEE_HASH" != "null" ]; then
+    # While unfunded the shared LNURL must resolve as an LNURL-pay request
+    LAISEE_LNURL_RESP=$(docker compose exec -T lnbits-1 curl -s "http://localhost:5000/laisee/api/v1/lnurl/$LAISEE_HASH" 2>/dev/null)
+    LAISEE_TAG=$(echo "$LAISEE_LNURL_RESP" | jq -r '.tag' 2>/dev/null)
+    LAISEE_MIN=$(echo "$LAISEE_LNURL_RESP" | jq -r '.minSendable' 2>/dev/null)
+    LAISEE_MAX=$(echo "$LAISEE_LNURL_RESP" | jq -r '.maxSendable' 2>/dev/null)
+    LAISEE_COMMENT_LEN=$(echo "$LAISEE_LNURL_RESP" | jq -r '.commentAllowed // 0' 2>/dev/null)
+
+    if [ "$LAISEE_TAG" = "payRequest" ] && [ "$LAISEE_MIN" = "10000" ] && [ "$LAISEE_MAX" = "1000000" ]; then
+      pass_test "Laisee created ($LAISEE_ID) serving LNURL-pay (10-1000 sats, commentAllowed: $LAISEE_COMMENT_LEN)"
+    else
+      fail_test "Laisee LNURL not in expected pay mode" "tag=$LAISEE_TAG min=$LAISEE_MIN max=$LAISEE_MAX"
+    fi
+  else
+    fail_test "Could not create laisee" "$LAISEE_CREATE"
+  fi
+else
+  fail_test "Cannot test Laisee - no lnbits-1 admin key"
+fi
+
+# =============================================================================
+# TEST 22: Laisee - Fund Envelope via LNURL-Pay Callback
+# =============================================================================
+start_test "Laisee - Fund Envelope via LNURL-Pay Callback"
+
+if [ -n "$LAISEE_HASH" ] && [ "$LAISEE_HASH" != "null" ]; then
+  # Ask the pay callback for an invoice, with a comment (allow_comment was set)
+  LAISEE_PAY_CB=$(docker compose exec -T lnbits-1 curl -s -G "http://localhost:5000/laisee/api/v1/lnurl/pay-cb/$LAISEE_HASH" \
+    --data-urlencode "amount=$((LAISEE_AMOUNT * 1000))" \
+    --data-urlencode "comment=Gong hei fat choy" 2>/dev/null)
+  LAISEE_BOLT11=$(echo "$LAISEE_PAY_CB" | jq -r '.pr' 2>/dev/null)
+
+  if [ -n "$LAISEE_BOLT11" ] && [ "$LAISEE_BOLT11" != "null" ]; then
+    echo "Envelope invoice: ${LAISEE_BOLT11:0:60}..."
+
+    # Pay from litd-2 - lnbits-1 is backed by litd-1, so it can't fund its own envelope
+    LAISEE_PAYMENT=$(docker compose exec -T litd-2 lncli --network=regtest --rpcserver=litd-2:10010 payinvoice --force "$LAISEE_BOLT11" 2>&1)
+
+    if echo "$LAISEE_PAYMENT" | grep -q "Payment status: SUCCEEDED"; then
+      # tasks.py marks the envelope paid off the invoice listener - give it a moment
+      LAISEE_PAID="false"
+      for i in $(seq 1 10); do
+        LAISEE_STATE=$(docker compose exec -T lnbits-1 curl -s "http://localhost:5000/laisee/api/v1/laisees/$LAISEE_ID" \
+          -H "X-Api-Key: $LNBITS1_ADMIN_KEY" 2>/dev/null)
+        LAISEE_PAID=$(echo "$LAISEE_STATE" | jq -r '.is_paid' 2>/dev/null)
+        [ "$LAISEE_PAID" = "true" ] && break
+        sleep 2
+      done
+
+      LAISEE_PAID_AMOUNT=$(echo "$LAISEE_STATE" | jq -r '.paid_amount' 2>/dev/null)
+      LAISEE_COMMENT=$(echo "$LAISEE_STATE" | jq -r '.comment // ""' 2>/dev/null)
+
+      if [ "$LAISEE_PAID" = "true" ] && [ "$LAISEE_PAID_AMOUNT" = "$LAISEE_AMOUNT" ]; then
+        pass_test "Laisee funded with $LAISEE_PAID_AMOUNT sats (comment: \"$LAISEE_COMMENT\")"
+      else
+        fail_test "Laisee not marked funded after payment" "is_paid=$LAISEE_PAID paid_amount=$LAISEE_PAID_AMOUNT"
+      fi
+    else
+      fail_test "Payment to laisee invoice failed" "$LAISEE_PAYMENT"
+    fi
+  else
+    fail_test "Could not get invoice from laisee pay callback" "$LAISEE_PAY_CB"
+  fi
+else
+  fail_test "Cannot fund laisee - no envelope created"
+fi
+
+# =============================================================================
+# TEST 23: Laisee - LNURL Flips to Withdraw Mode and Pays Out
+# =============================================================================
+start_test "Laisee - LNURL Flips to Withdraw Mode and Pays Out"
+
+LAISEE_K1=""
+
+if [ -n "$LAISEE_HASH" ] && [ "$LAISEE_HASH" != "null" ]; then
+  # The same LNURL must now resolve as an LNURL-withdraw for exactly what was paid in
+  LAISEE_W_RESP=$(docker compose exec -T lnbits-1 curl -s "http://localhost:5000/laisee/api/v1/lnurl/$LAISEE_HASH" 2>/dev/null)
+  LAISEE_W_TAG=$(echo "$LAISEE_W_RESP" | jq -r '.tag' 2>/dev/null)
+  LAISEE_K1=$(echo "$LAISEE_W_RESP" | jq -r '.k1' 2>/dev/null)
+  LAISEE_W_MIN=$(echo "$LAISEE_W_RESP" | jq -r '.minWithdrawable' 2>/dev/null)
+  LAISEE_W_MAX=$(echo "$LAISEE_W_RESP" | jq -r '.maxWithdrawable' 2>/dev/null)
+
+  echo "LNURL mode after funding: $LAISEE_W_TAG (min: $LAISEE_W_MIN, max: $LAISEE_W_MAX msat)"
+
+  if [ "$LAISEE_W_TAG" = "withdrawRequest" ] && [ "$LAISEE_W_MIN" = "$((LAISEE_AMOUNT * 1000))" ] && [ "$LAISEE_W_MAX" = "$((LAISEE_AMOUNT * 1000))" ]; then
+    # Claim it to litd-2 - the withdraw amount must match paid_amount exactly
+    LAISEE_CLAIM_INV=$(docker compose exec -T litd-2 lncli --network=regtest --rpcserver=litd-2:10010 addinvoice --amt="$LAISEE_AMOUNT" --memo="Laisee claim" 2>/dev/null)
+    LAISEE_CLAIM_PR=$(echo "$LAISEE_CLAIM_INV" | jq -r '.payment_request' 2>/dev/null)
+
+    if [ -n "$LAISEE_CLAIM_PR" ] && [ "$LAISEE_CLAIM_PR" != "null" ]; then
+      LAISEE_W_CB=$(docker compose exec -T lnbits-1 curl -s -G "http://localhost:5000/laisee/api/v1/lnurl/withdraw-cb/$LAISEE_HASH" \
+        --data-urlencode "k1=$LAISEE_K1" \
+        --data-urlencode "pr=$LAISEE_CLAIM_PR" 2>/dev/null)
+      LAISEE_W_STATUS=$(echo "$LAISEE_W_CB" | jq -r '.status' 2>/dev/null)
+
+      if [ "$LAISEE_W_STATUS" = "OK" ]; then
+        sleep 3
+        LAISEE_FINAL=$(docker compose exec -T lnbits-1 curl -s "http://localhost:5000/laisee/api/v1/laisees/$LAISEE_ID" \
+          -H "X-Api-Key: $LNBITS1_ADMIN_KEY" 2>/dev/null)
+        LAISEE_WITHDRAWN=$(echo "$LAISEE_FINAL" | jq -r '.is_withdrawn' 2>/dev/null)
+
+        if [ "$LAISEE_WITHDRAWN" = "true" ]; then
+          pass_test "Laisee withdrawn: $LAISEE_AMOUNT sats claimed to litd-2, envelope marked spent"
+        else
+          fail_test "Withdraw callback returned OK but envelope not marked withdrawn" "is_withdrawn=$LAISEE_WITHDRAWN"
+        fi
+      else
+        fail_test "Laisee withdraw callback failed" "$LAISEE_W_CB"
+      fi
+    else
+      fail_test "Could not create claim invoice on litd-2" "$LAISEE_CLAIM_INV"
+    fi
+  else
+    fail_test "Laisee LNURL did not flip to withdraw mode" "tag=$LAISEE_W_TAG min=$LAISEE_W_MIN max=$LAISEE_W_MAX"
+  fi
+else
+  fail_test "Cannot withdraw laisee - no envelope created"
+fi
+
+# =============================================================================
+# TEST 24: Laisee - Second Withdrawal Is Rejected (withdraw-once invariant)
+# =============================================================================
+start_test "Laisee - Second Withdrawal Is Rejected"
+
+if [ -n "$LAISEE_HASH" ] && [ "$LAISEE_HASH" != "null" ] && [ -n "$LAISEE_K1" ] && [ "$LAISEE_K1" != "null" ]; then
+  # A spent envelope must not hand out a second payout, and its LNURL must go dead
+  LAISEE_REPLAY_INV=$(docker compose exec -T litd-2 lncli --network=regtest --rpcserver=litd-2:10010 addinvoice --amt="$LAISEE_AMOUNT" --memo="Laisee replay" 2>/dev/null)
+  LAISEE_REPLAY_PR=$(echo "$LAISEE_REPLAY_INV" | jq -r '.payment_request' 2>/dev/null)
+
+  LAISEE_REPLAY_CB=$(docker compose exec -T lnbits-1 curl -s -G "http://localhost:5000/laisee/api/v1/lnurl/withdraw-cb/$LAISEE_HASH" \
+    --data-urlencode "k1=$LAISEE_K1" \
+    --data-urlencode "pr=$LAISEE_REPLAY_PR" 2>/dev/null)
+  LAISEE_REPLAY_STATUS=$(echo "$LAISEE_REPLAY_CB" | jq -r '.status' 2>/dev/null)
+  LAISEE_REPLAY_REASON=$(echo "$LAISEE_REPLAY_CB" | jq -r '.reason // ""' 2>/dev/null)
+
+  # And the LNURL itself should report the envelope as spent
+  LAISEE_DEAD=$(docker compose exec -T lnbits-1 curl -s "http://localhost:5000/laisee/api/v1/lnurl/$LAISEE_HASH" 2>/dev/null)
+  LAISEE_DEAD_STATUS=$(echo "$LAISEE_DEAD" | jq -r '.status' 2>/dev/null)
+
+  if [ "$LAISEE_REPLAY_STATUS" = "ERROR" ] && [ "$LAISEE_DEAD_STATUS" = "ERROR" ]; then
+    pass_test "Double-withdraw rejected (\"$LAISEE_REPLAY_REASON\") and LNURL retired"
+  else
+    fail_test "Spent laisee did not reject second withdrawal" "replay=$LAISEE_REPLAY_CB lnurl=$LAISEE_DEAD"
+  fi
+else
+  fail_test "Cannot test double-withdraw - no funded envelope"
+fi
+
+# =============================================================================
+# TEST 25: Laisee - Concurrent Claims Cannot Double-Spend (race invariant)
+# =============================================================================
+start_test "Laisee - Concurrent Claims Cannot Double-Spend"
+
+# Re-fetch the lnbits-1 admin key in case test 21 was skipped
+docker cp lightning-dev-env-lnbits-1-1:/app/data/database.sqlite3 /tmp/lnbits1-race.db 2>/dev/null || true
+LNBITS1_ADMIN_KEY=$(sqlite3 /tmp/lnbits1-race.db "SELECT adminkey FROM wallets ORDER BY id LIMIT 1;" 2>/dev/null || echo "$LNBITS1_ADMIN_KEY")
+rm -f /tmp/lnbits1-race.db
+
+RACE_AMOUNT=100
+RACE_CLAIMS=6
+
+if [ -n "$LNBITS1_ADMIN_KEY" ]; then
+  RACE_CREATE=$(docker compose exec -T lnbits-1 curl -s -X POST "http://localhost:5000/laisee/api/v1/laisees" \
+    -H "X-Api-Key: $LNBITS1_ADMIN_KEY" \
+    -H "Content-Type: application/json" \
+    -d '{"title": "Race Test Envelope", "min_sats": 10, "max_sats": 1000}')
+  RACE_ID=$(echo "$RACE_CREATE" | jq -r '.id' 2>/dev/null)
+  RACE_HASH=$(echo "$RACE_CREATE" | jq -r '.unique_hash' 2>/dev/null)
+
+  if [ -n "$RACE_HASH" ] && [ "$RACE_HASH" != "null" ]; then
+    RACE_PAY_CB=$(docker compose exec -T lnbits-1 curl -s -G "http://localhost:5000/laisee/api/v1/lnurl/pay-cb/$RACE_HASH" \
+      --data-urlencode "amount=$((RACE_AMOUNT * 1000))" 2>/dev/null)
+    RACE_BOLT11=$(echo "$RACE_PAY_CB" | jq -r '.pr' 2>/dev/null)
+
+    if [ -n "$RACE_BOLT11" ] && [ "$RACE_BOLT11" != "null" ]; then
+      docker compose exec -T litd-2 lncli --network=regtest --rpcserver=litd-2:10010 payinvoice --force "$RACE_BOLT11" >/dev/null 2>&1
+      RACE_PAID="false"
+      for i in $(seq 1 10); do
+        RACE_STATE=$(docker compose exec -T lnbits-1 curl -s "http://localhost:5000/laisee/api/v1/laisees/$RACE_ID" \
+          -H "X-Api-Key: $LNBITS1_ADMIN_KEY" 2>/dev/null)
+        RACE_PAID=$(echo "$RACE_STATE" | jq -r '.is_paid' 2>/dev/null)
+        [ "$RACE_PAID" = "true" ] && break
+        sleep 2
+      done
+
+      if [ "$RACE_PAID" = "true" ]; then
+        RACE_K1=$(docker compose exec -T lnbits-1 curl -s "http://localhost:5000/laisee/api/v1/lnurl/$RACE_HASH" 2>/dev/null | jq -r '.k1' 2>/dev/null)
+
+        # Build N distinct claim invoices on litd-2, then fire all claims concurrently
+        RACE_RESULTS=/tmp/laisee_race_results.txt
+        rm -f "$RACE_RESULTS"
+        for n in $(seq 1 $RACE_CLAIMS); do
+          RACE_INV=$(docker compose exec -T litd-2 lncli --network=regtest --rpcserver=litd-2:10010 addinvoice --amt=$RACE_AMOUNT --memo="Race claim $n" 2>/dev/null)
+          RACE_PR=$(echo "$RACE_INV" | jq -r '.payment_request' 2>/dev/null)
+          (docker compose exec -T lnbits-1 curl -s -G "http://localhost:5000/laisee/api/v1/lnurl/withdraw-cb/$RACE_HASH" \
+            --data-urlencode "k1=$RACE_K1" --data-urlencode "pr=$RACE_PR" | jq -r '.status' >> "$RACE_RESULTS") &
+        done
+        wait
+        sleep 3
+
+        RACE_OK_COUNT=$(grep -c '^OK$' "$RACE_RESULTS" 2>/dev/null || echo 0)
+        rm -f "$RACE_RESULTS"
+
+        if [ "$RACE_OK_COUNT" = "1" ]; then
+          pass_test "Concurrent claims: exactly 1 of $RACE_CLAIMS succeeded, envelope not double-spent"
+        else
+          fail_test "Concurrent claims violated withdraw-once invariant" "OK count=$RACE_OK_COUNT"
+        fi
+      else
+        fail_test "Race envelope not marked funded in time" "is_paid=$RACE_PAID"
+      fi
+    else
+      fail_test "Could not get race envelope invoice" "$RACE_PAY_CB"
+    fi
+  else
+    fail_test "Could not create race envelope" "$RACE_CREATE"
+  fi
+else
+  fail_test "Cannot test race invariant - no lnbits-1 admin key"
+fi
+
+# =============================================================================
 # TEST SUMMARY
 # =============================================================================
 echo ""

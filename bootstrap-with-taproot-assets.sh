@@ -7,9 +7,11 @@ set -e
 
 # Configuration: Extensions
 TAPROOT_ASSETS_REPO="${TAPROOT_ASSETS_REPO:-https://github.com/echennells/taproot_assets}"
-TAPROOT_ASSETS_VERSION="${TAPROOT_ASSETS_VERSION:-merge-prepare}"  # can be branch, tag, or commit
+TAPROOT_ASSETS_VERSION="${TAPROOT_ASSETS_VERSION:-cleanup-and-race-fixes}"  # dev branch with today's cleanup + race-condition fixes
 BITCOINSWITCH_REPO="${BITCOINSWITCH_REPO:-https://github.com/echennells/bitcoinswitch}"
 BITCOINSWITCH_VERSION="${BITCOINSWITCH_VERSION:-taproot-address-support}"  # can be branch, tag, or commit
+LAISEE_REPO="${LAISEE_REPO:-https://github.com/Liongrass/laisee_extension}"
+LAISEE_VERSION="${LAISEE_VERSION:-v0.7}"  # can be branch, tag, or commit
 
 echo "🚀 BOOTSTRAPPING FRESH LNBITS + LNURLFLIP + TAPROOT ASSETS ENVIRONMENT"
 echo "=============================================================="
@@ -19,6 +21,8 @@ echo "   Taproot Assets Repository: $TAPROOT_ASSETS_REPO"
 echo "   Taproot Assets Version: $TAPROOT_ASSETS_VERSION"
 echo "   Bitcoin Switch Repository: $BITCOINSWITCH_REPO"
 echo "   Bitcoin Switch Version: $BITCOINSWITCH_VERSION"
+echo "   Laisee Repository: $LAISEE_REPO"
+echo "   Laisee Version: $LAISEE_VERSION"
 echo ""
 
 # Clone or update Taproot Assets extension
@@ -56,6 +60,26 @@ else
   git checkout "$BITCOINSWITCH_VERSION"
   cd ../lightning-dev-env
   echo "✅ Bitcoin Switch extension cloned"
+fi
+echo ""
+
+# Clone or update Laisee extension (folder name differs from extension id)
+cd ..
+if [ -d "laisee_extension" ]; then
+  echo "Found existing laisee_extension directory. Updating to $LAISEE_VERSION..."
+  cd laisee_extension
+  git fetch origin --tags
+  git checkout "$LAISEE_VERSION"
+  git pull origin "$LAISEE_VERSION" 2>/dev/null || echo "Already up to date"
+  cd ../lightning-dev-env
+  echo "✅ Laisee extension updated"
+else
+  echo "Cloning Laisee extension..."
+  git clone "$LAISEE_REPO" laisee_extension
+  cd laisee_extension
+  git checkout "$LAISEE_VERSION"
+  cd ../lightning-dev-env
+  echo "✅ Laisee extension cloned"
 fi
 echo ""
 
@@ -476,6 +500,7 @@ echo ""
 echo "✅ Extensions installed:"
 echo "   • Bitcoin Switch: http://localhost:5001/bitcoinswitch"
 echo "   • Taproot Assets: http://localhost:5001/taproot_assets"
+echo "   • Laisee:         http://localhost:5001/laisee"
 echo ""
 echo "💰 LNbits wallets funded for testing:"
 echo "   • Both wallets have Bitcoin balance"

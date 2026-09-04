@@ -61,6 +61,14 @@ while IFS= read -r component; do
   BRANCH=$(echo "$BUILD_CONFIG" | jq -r ".$component.branch")
   DOCKERFILE=$(echo "$BUILD_CONFIG" | jq -r ".$component.dockerfile")
 
+  # Collect --build-arg flags from optional build_args object
+  BUILD_ARG_FLAGS=()
+  BUILD_ARGS_JSON=$(echo "$BUILD_CONFIG" | jq -c ".$component.build_args // {}")
+  while IFS="=" read -r k v; do
+    [ -z "$k" ] && continue
+    BUILD_ARG_FLAGS+=(--build-arg "$k=$v")
+  done < <(echo "$BUILD_ARGS_JSON" | jq -r 'to_entries[] | "\(.key)=\(.value)"')
+
   COMPONENT_DIR="$BUILD_DIR/$component"
 
   echo "  Repository: $REPO"
@@ -100,7 +108,24 @@ while IFS= read -r component; do
       ;;
   esac
 
-  if docker build --platform linux/amd64 -t "$IMAGE_NAME:$TAG" -f "$DOCKERFILE" . 2>&1 | tee "$SCRIPT_DIR/$BUILD_DIR/build-$component.log"; then
+  # Use buildx with GHA cache when running in GitHub Actions; fall back to plain docker build otherwise
+  BUILD_CMD=(docker build)
+  CACHE_FLAGS=()
+  if [ "$GITHUB_ACTIONS" = "true" ] && docker buildx version > /dev/null 2>&1; then
+    CACHE_SCOPE="$component-$BRANCH"
+    BUILD_CMD=(docker buildx build --load)
+    CACHE_FLAGS=(
+      --cache-from "type=gha,scope=$CACHE_SCOPE"
+      --cache-to "type=gha,scope=$CACHE_SCOPE,mode=max"
+    )
+  fi
+
+  if "${BUILD_CMD[@]}" \
+      --platform linux/amd64 \
+      "${CACHE_FLAGS[@]}" \
+      "${BUILD_ARG_FLAGS[@]}" \
+      -t "$IMAGE_NAME:$TAG" \
+      -f "$DOCKERFILE" . 2>&1 | tee "$SCRIPT_DIR/$BUILD_DIR/build-$component.log"; then
     # Also tag as "dev" for version variable
     docker tag "$IMAGE_NAME:$TAG" "$IMAGE_NAME:dev"
     echo -e "${GREEN}  ✓ Built successfully: $IMAGE_NAME:$TAG${NC}"

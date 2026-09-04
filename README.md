@@ -1,175 +1,175 @@
 # Lightning Development Environment
 
-Comprehensive Bitcoin Lightning Network testing environment that runs in GitHub Actions. Sets up a complete Lightning ecosystem with multiple nodes, channels, Taproot Assets, and LNbits instances for automated testing.
+Bitcoin + Lightning regtest stack for testing Taproot Assets, RFQ payments, and LNbits extensions. Runs locally via `docker compose` and in GitHub Actions via a version matrix.
 
-## Features
-
-### Core Infrastructure
-- **Bitcoin Core** in regtest mode for instant block generation
-- **3 Lightning Nodes**: 2 litd nodes with Taproot Assets + 1 standard LND node
-- **3 LNbits Instances**: Each connected to a different Lightning node
-- **HTTPS Proxy**: Nginx-based proxy for domain spoofing and SSL termination
-- **Automated Channel Management**: Multiple channel types including Taproot Asset channels
-
-### What Gets Tested
-- ✅ Bitcoin wallet creation and funding
-- ✅ Lightning node initialization and synchronization
-- ✅ Multi-hop Lightning channel creation and confirmation
-- ✅ Cross-node Lightning payments
-- ✅ Taproot Asset minting and asset channels
-- ✅ LNbits instance setup with admin user creation
-- ✅ LNbits wallet funding from Lightning nodes
-- ✅ Inter-LNbits payments across different backend nodes
-- ✅ HTTPS proxy with domain spoofing for testing production-like environments
-
-## Architecture
+## Topology
 
 ```
-┌─────────────┐
-│  Bitcoin    │
-│   Core      │
-└──────┬──────┘
-       │
-┌──────┴──────┬──────────┬───────────┐
-│             │          │           │
-▼             ▼          ▼           │
-litd-1        litd-2     LND         │
-(Taproot)     (Taproot)  (Standard)  │
-│             │          │           │
-├─channel────►│          │           │
-├─channel────────────────►           │
-│             ├─channel──►           │
-│             │          │           │
-▼             ▼          ▼           │
-LNbits-1      LNbits-2   LNbits-3    │
-(port 5001)   (port 5002) (port 5003)│
-│             │          │           │
-└─────────────┴──────────┴───────────┘
-         HTTPS Proxy (port 443)
+                       ┌─────────────────────────────┐
+                       │          bitcoind           │
+                       │    (regtest, port 18443)    │
+                       └─────────────────────────────┘
+
+  ┌───────────────────┐                             ┌───────────────────┐
+  │       lnd         │◄────────── sat ────────────►│      litd-2       │
+  │  (standalone,     │◄────────── sat ────────────►│  integrated lnd   │
+  │   sats only)      │                             │  + tapd           │
+  └───────────────────┘                             └─────────▲─────────┘
+                                                              │
+                                                          sat │
+                                                              │
+                                                    ══ asset ═╪═════╗
+                                                              │     ║
+                                                    ┌─────────▼─────▼───┐
+                                                    │       litd-1      │
+                                                    │   integrated lnd  │
+                                                    │   + tapd          │
+                                                    └─────────▲─────────┘
+                                                              │
+                                                          sat │
+                                                              │
+                                                    ┌─────────┴─────────┐
+                                                    │   lnd-rfq-payer   │
+                                                    │ (sats only, only  │
+                                                    │  routes via       │
+                                                    │  litd-1 → RFQ)    │
+                                                    └───────────────────┘
 ```
 
-## Services & Ports
+Each node has a matching LNbits wallet UI as its REST client:
 
-| Service | Type | Ports | Purpose |
-|---------|------|-------|---------|
-| **bitcoind** | Bitcoin Core | 18443 (RPC) | Regtest blockchain |
-| **litd-1** | Lightning Terminal | 10009 (gRPC), 8080 (REST) | Primary Taproot-enabled node |
-| **litd-2** | Lightning Terminal | 10010 (gRPC), 8081 (REST) | Secondary Taproot-enabled node |
-| **lnd** | Lightning Network Daemon | 10011 (gRPC), 8082 (REST) | Standard Lightning node |
-| **lnbits-1** | LNbits | 5001 | Wallet system on litd-1 |
-| **lnbits-2** | LNbits | 5002 | Wallet system on litd-2 |
-| **lnbits-3** | LNbits | 5003 | Wallet system on lnd |
-| **nginx** | HTTPS Proxy | 443 | SSL termination & routing |
+| LNbits | Backs | Port | Taproot assets? |
+|---|---|---|---|
+| lnbits-1 | litd-1 | 5001 | yes |
+| lnbits-2 | litd-2 | 5002 | yes |
+| lnbits-3 | lnd | 5003 | no |
+| lnbits-4 | lnd-rfq-payer | 5004 | no (RFQ test payer) |
 
-## Lightning Channels
+## Login
 
-The workflow creates multiple channels for comprehensive testing:
+All LNbits instances use the same credentials:
 
-1. **litd-1 → lnd**: 10M sats capacity (50/50 balanced)
-2. **litd-2 → lnd**: 10M sats capacity (50/50 balanced)  
-3. **litd-1 → litd-2**: 10M sats capacity (50/50 balanced)
-4. **Taproot Asset Channel**: litd-1 → litd-2 with custom assets
+- **Username:** `admin`
+- **Password:** `password123`
 
-## LNbits Configuration
+Lightning Terminal UIs (litd-1: `https://localhost:8443`, litd-2: `https://localhost:8444`) use password-only login: `password`.
 
-Each LNbits instance is configured with:
-- Admin user with generated credentials
-- Invoice/read API keys for wallet operations
-- 500,000 sats initial funding from Lightning nodes
-- Full REST API access for payment testing
+**Cookie-jar gotcha:** browsers share cookies across all `localhost` ports. To be logged into two LNbits at once, use a normal window for one and an incognito/private window for the other, or use separate browser profiles.
 
-## Workflow Steps
+Bitcoin RPC: `http://lightning:lightning@localhost:18443`.
 
-1. **Infrastructure Setup**
-   - Start Bitcoin Core and Lightning nodes
-   - Wait for services to be ready
+## Channels (built by `bootstrap-with-taproot-assets.sh`)
 
-2. **Bitcoin Setup**
-   - Create wallets for all nodes
-   - Mine initial blocks
-   - Fund each Lightning node with 10 BTC
+| # | Type | Opener → Peer | Capacity | Local / Remote after push |
+|---|---|---|---|---|
+| 1 | sat | litd-1 → lnd | 10 M sat | 5 M / 5 M |
+| 2 | sat | litd-2 → lnd | 10 M sat | 5 M / 5 M |
+| 3 | sat | litd-1 → litd-2 | 10 M sat | 5 M / 5 M |
+| 4 | sat | lnd-rfq-payer → litd-1 | 10 M sat | 5 M / 5 M |
+| 5 | **taproot asset** | litd-1 → litd-2 | 50 000 units (+ 15 000 sat push) | 35 000 / 15 000 units |
 
-3. **Lightning Network**
-   - Open channels between all nodes
-   - Mine blocks to confirm channels
-   - Verify channel connectivity
+`lnd-rfq-payer` has **only** channel #4 — no direct path to litd-2 — which forces RFQ route hints to be used when paying a taproot-asset invoice.
 
-4. **Taproot Assets** (Optional)
-   - Mint TestCoin assets on litd-1
-   - Open asset-enabled channel to litd-2
-   - Test asset transfers
+## RFQ payment flow (sats → asset)
 
-5. **LNbits Setup**
-   - Start 3 LNbits instances
-   - Configure admin users
-   - Fund wallets from Lightning nodes
+The canonical test: pay a taproot-asset invoice on lnbits-2 with sats from lnbits-4.
 
-6. **Payment Testing**
-   - Test cross-node Lightning payments
-   - Test LNbits-to-LNbits transactions
-   - Verify multi-hop routing
+1. Create an asset invoice in lnbits-2 (`http://localhost:5002/taproot_assets/`).
+2. Paste the bolt11 into lnbits-4's Pay screen (`http://localhost:5004/`).
+3. The invoice's route hint directs payment `lnd-rfq-payer → litd-1 → [RFQ conversion via asset channel] → litd-2`.
+4. lnbits-4 spends sats; lnbits-2 sees an asset-balance increase.
 
-7. **HTTPS Proxy**
-   - Generate SSL certificates
-   - Configure Nginx for domain spoofing
-   - Test HTTPS endpoints
+Mock price oracle is hardcoded to `100 000 asset units per BTC`.
 
-## Usage
+## Laisee (red envelopes)
 
-### Running Tests
+[`Liongrass/laisee_extension`](https://github.com/Liongrass/laisee_extension), pinned to `v0.7`. Installed into
+lnbits-1 and lnbits-2 by `setup-lnbits-extensions.sh` (repo folder is `laisee_extension`, extension id is `laisee`).
+UI at `http://localhost:5001/laisee/`.
 
-The workflow triggers automatically on push to the repository. You can also manually trigger it from the Actions tab.
+One envelope is a single LNURL that changes mode with its own state — pay once, then withdraw once:
 
-### Adding Custom Tests
+1. Create an envelope (`POST /laisee/api/v1/laisees`, admin key) with a `min_sats`/`max_sats` range.
+2. While unfunded the LNURL (`GET /laisee/api/v1/lnurl/<unique_hash>`) serves an **LNURL-pay** request.
+3. The sender hits the pay callback, gets a bolt11, and pays it. The invoice listener in `tasks.py` marks the
+   envelope funded and records `paid_amount` (and the comment, when `allow_comment` is set).
+4. The *same* LNURL now serves an **LNURL-withdraw** for exactly `paid_amount` — the recipient scans it to claim.
+5. Once claimed the envelope is spent: the withdraw callback and the LNURL both return an error.
 
-Add your test steps to `.github/workflows/test-lightning-channel.yml` after the LNbits setup:
+Tests 21-24 in `test-suite.sh` drive that whole path against real channels (funded from litd-2, claimed back to
+litd-2), including the double-withdraw rejection.
 
-```yaml
-- name: Run my custom tests
-  run: |
-    # Your test commands here
-    curl -X POST http://localhost:5001/api/v1/payments ...
+## Services & ports
+
+| Service | Host port | Purpose |
+|---|---|---|
+| bitcoind | 18443, 29000, 29001 | regtest RPC + zmq |
+| litd-1 | 8443 (LiT UI), 10009 (lnd gRPC), 8083 (lnd REST), 9735 (P2P), 10029 (tapd gRPC) | integrated lnd + tapd |
+| litd-2 | 8444, 10010, 8084, 9736, 10030 | integrated lnd + tapd |
+| lnd | 10011, 8085, 9737 | standalone lnd |
+| lnd-rfq-payer | 10012, 8086, 9738 | RFQ payer |
+| lnbits-1..4 | 5001, 5002, 5003, 5004 | LNbits web UIs |
+| lnbits-https-proxy | 5443 | self-signed HTTPS front for LNURL (routes to lnbits-2) |
+
+## Running locally
+
+```
+./bootstrap-with-taproot-assets.sh   # fresh stack
+./test-suite.sh                      # 20-test smoke suite
+./destroy.sh                         # tear down + wipe ./data/
 ```
 
-### Environment Variables
+Keys, user IDs, and access tokens for the bootstrapped wallets are written to `lnbits_keys.env` — `source lnbits_keys.env` to use them with `curl`.
 
-The workflow exports these variables for use in custom tests:
+## Version matrix (CI)
 
-- `LNBITS1_ADMIN_KEY`, `LNBITS2_ADMIN_KEY`, `LNBITS3_ADMIN_KEY` - Admin API keys
-- `LNBITS1_INVOICE_KEY`, `LNBITS2_INVOICE_KEY`, `LNBITS3_INVOICE_KEY` - Invoice/read keys
-- `LITD1_PUBKEY`, `LITD2_PUBKEY`, `LND_PUBKEY` - Node public keys
+`.github/workflows/test-version-matrix.yml` runs `./run-matrix-tests.sh --set <name>` against each set defined in `version-matrix.json`:
 
-## Error Handling
+- `stable` — latest released versions; builds lnd from source (`lightningnetwork/lnd` tag `v0.20.1-beta`) via `build-from-source.sh`, cached with buildx + GHA cache.
+- `bleeding-edge` — stable backends + LNbits `dev` branch built from source.
+- `legacy` — one major back.
 
-The workflow includes comprehensive error handling:
-- Automatic failure on any payment or channel errors
-- Detailed logging for debugging
-- Container log output on failures
-- Proper cleanup of resources
+To run the matrix locally:
 
-## Files
+```
+./run-matrix-tests.sh --list
+./run-matrix-tests.sh --set stable
+```
 
-- `.github/workflows/test-lightning-channel.yml` - Main workflow definition
-- `docker-compose.yml` - Service definitions for all containers
-- `nginx-lnbits.conf` - Local proxy configuration
-- `remote-proxy-nginx.conf` - GitHub Actions proxy configuration  
-- `ssl/` - SSL certificates for HTTPS testing
+## Building lnd (and other components) from source
 
-## Requirements
+Per-version-set `build_from_source` entries in `version-matrix.json` drive `build-from-source.sh`:
 
-This runs entirely in GitHub Actions - no local setup required. The workflow uses:
-- Ubuntu latest runner
-- Docker and Docker Compose
-- Standard GitHub Actions environment
+```json
+"build_from_source": {
+  "lnd": {
+    "repo": "https://github.com/lightningnetwork/lnd.git",
+    "branch": "v0.20.1-beta",
+    "dockerfile": "Dockerfile",
+    "build_args": { "checkout": "v0.20.1-beta" }
+  }
+}
+```
+
+The script clones, tags the image as `local-<component>:dev`, and `run-matrix-tests.sh` exports `LND_IMAGE=local-lnd:dev` (or `LNBITS_IMAGE`, `LITD_IMAGE`) so `docker-compose.yml` picks up the local build. Inside GitHub Actions, buildx uses `type=gha` cache scoped by `<component>-<branch>` so re-runs only recompile what changed.
+
+## Key files
+
+- `docker-compose.yml` — all service definitions
+- `bootstrap-with-taproot-assets.sh` — end-to-end setup (nodes, wallets, channels, asset mint, asset channel, extensions)
+- `setup-lnbits-extensions.sh` — installs taproot_assets + bitcoinswitch + laisee extensions into each LNbits DB
+- `fund-lnbits-wallets.sh` — sends sats + asset funds into each LNbits wallet
+- `test-suite.sh` — 25 assertions covering sat payments, asset payments, RFQ, LNURL, lnurlFlip, bitcoinswitch, laisee
+- `run-matrix-tests.sh` — drives one or all version sets
+- `build-from-source.sh` — per-set source builds (lnd, lnbits, litd)
+- `nginx-lnbits.conf` — HTTPS front; currently proxies to lnbits-2
+- `version-matrix.json` — pinned versions and optional source-build specs
+- `lnbits_keys.env` — emitted at bootstrap: API keys, user IDs, JWTs, pre-seeded LNURL/flip IDs
 
 ## Debugging
 
-If the workflow fails, check:
-1. The workflow logs in the Actions tab
-2. Container logs (automatically shown on failure)
-3. Lightning node channel states
-4. LNbits wallet balances
-
-## Based On
-
-Inspired by [lnbits/legend-regtest-enviroment](https://github.com/lnbits/legend-regtest-enviroment) with significant enhancements for multi-node testing, Taproot Assets, and HTTPS proxy support.
+- Container logs: `docker compose logs --tail=100 litd-1`
+- Shell into a node: `docker compose exec litd-1 sh`
+- `lncli` on litd-1: `docker compose exec litd-1 lncli --network=regtest getinfo`
+- `tapcli` on litd-1: `docker compose exec litd-1 tapcli --network=regtest --rpcserver=localhost:10009 --tlscertpath=/root/.lnd/tls.cert --macaroonpath=/root/.tapd/data/regtest/admin.macaroon assets balance`
+- `bitcoin-cli`: `docker compose exec bitcoind bitcoin-cli -regtest -rpcuser=lightning -rpcpassword=lightning getblockchaininfo`

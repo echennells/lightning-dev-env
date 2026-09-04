@@ -1,6 +1,6 @@
 services:
   bitcoind:
-    image: boltz/bitcoin-core:${BITCOIN_CORE_VERSION:-30.0}
+    image: boltz/bitcoin-core:${BITCOIN_CORE_VERSION:-30.2}
     platform: linux/amd64
     hostname: bitcoind
     command:
@@ -22,7 +22,7 @@ services:
       - "29001:29001"
 
   litd-1:
-    image: ${LITD_IMAGE:-lightninglabs/lightning-terminal:${LITD_VERSION:-v0.16.0-alpha}}
+    image: ${LITD_IMAGE:-lightninglabs/lightning-terminal:${LITD_VERSION:-v0.16.1-alpha}}
     platform: linux/amd64
     hostname: litd-1
     depends_on:
@@ -80,7 +80,7 @@ services:
       - "10029:10029" # Tapd gRPC
 
   litd-2:
-    image: ${LITD_IMAGE:-lightninglabs/lightning-terminal:${LITD_VERSION:-v0.16.0-alpha}}
+    image: ${LITD_IMAGE:-lightninglabs/lightning-terminal:${LITD_VERSION:-v0.16.1-alpha}}
     platform: linux/amd64
     hostname: litd-2
     depends_on:
@@ -137,7 +137,7 @@ services:
       - "10030:10030" # Tapd gRPC
 
   lnd:
-    image: boltz/lnd:${LND_VERSION:-0.18.4-beta}
+    image: ${LND_IMAGE:-boltz/lnd:${LND_VERSION:-0.20.1-beta}}
     platform: linux/amd64
     hostname: lnd
     depends_on:
@@ -168,7 +168,7 @@ services:
   # RFQ test payer - only has channel to litd-1 (RFQ edge), no direct route to litd-2
   # This forces payments to follow route hints through the RFQ edge
   lnd-rfq-payer:
-    image: boltz/lnd:${LND_VERSION:-0.18.4-beta}
+    image: ${LND_IMAGE:-boltz/lnd:${LND_VERSION:-0.20.1-beta}}
     platform: linux/amd64
     hostname: lnd-rfq-payer
     depends_on:
@@ -197,7 +197,7 @@ services:
       - "9738:9738"
 
   lnbits-1:
-    image: ${LNBITS_IMAGE:-lnbits/lnbits:${LNBITS_VERSION:-v1.4.2}}
+    image: ${LNBITS_IMAGE:-lnbits/lnbits:${LNBITS_VERSION:-v1.5.3}}
     pull_policy: if_not_present
     platform: linux/amd64
     hostname: lnbits-1
@@ -240,7 +240,7 @@ services:
       - "5001:5000"
 
   lnbits-2:
-    image: ${LNBITS_IMAGE:-lnbits/lnbits:${LNBITS_VERSION:-v1.4.2}}
+    image: ${LNBITS_IMAGE:-lnbits/lnbits:${LNBITS_VERSION:-v1.5.3}}
     pull_policy: if_not_present
     platform: linux/amd64
     hostname: lnbits-2
@@ -279,7 +279,7 @@ services:
       - "5002:5000"
 
   lnbits-3:
-    image: ${LNBITS_IMAGE:-lnbits/lnbits:${LNBITS_VERSION:-v1.4.2}}
+    image: ${LNBITS_IMAGE:-lnbits/lnbits:${LNBITS_VERSION:-v1.5.3}}
     pull_policy: if_not_present
     platform: linux/amd64
     hostname: lnbits-3
@@ -309,7 +309,7 @@ services:
 
   # LNbits for RFQ payer (sats-only node for testing RFQ conversions)
   lnbits-4:
-    image: ${LNBITS_IMAGE:-lnbits/lnbits:${LNBITS_VERSION:-v1.4.2}}
+    image: ${LNBITS_IMAGE:-lnbits/lnbits:${LNBITS_VERSION:-v1.5.3}}
     pull_policy: if_not_present
     platform: linux/amd64
     hostname: lnbits-4

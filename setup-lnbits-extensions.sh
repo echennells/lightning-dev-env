@@ -3,6 +3,10 @@ set -e
 
 echo "=== Setting up LNbits Extensions ==="
 
+# Record the laisee version actually checked out, so the LNbits DB row matches the code
+LAISEE_DB_VERSION=$(git -C ../laisee_extension describe --tags --always 2>/dev/null | sed 's/^v//')
+LAISEE_DB_VERSION="${LAISEE_DB_VERSION:-0.7}"
+
 # Function to setup extensions for a specific LNbits instance
 setup_lnbits_instance() {
   local LNBITS_CONTAINER=$1
@@ -39,6 +43,15 @@ setup_lnbits_instance() {
     docker cp ../bitcoinswitch "$LNBITS_CONTAINER:/app/lnbits/extensions/"
   else
     echo "⚠️  Bitcoin Switch extension not found, skipping..."
+  fi
+
+  # Laisee: repo folder is `laisee_extension` but extension id is `laisee`
+  if [ -d "../laisee_extension" ]; then
+    echo "Copying Laisee extension..."
+    docker exec "$LNBITS_CONTAINER" rm -rf /app/lnbits/extensions/laisee
+    docker cp ../laisee_extension "$LNBITS_CONTAINER:/app/lnbits/extensions/laisee"
+  else
+    echo "⚠️  Laisee extension not found, skipping..."
   fi
 
   # Extract gRPC files
@@ -157,6 +170,19 @@ INSERT OR REPLACE INTO installed_extensions (id, version, name, short_descriptio
 -- Enable Bitcoin Switch for admin user
 INSERT OR REPLACE INTO extensions ("user", extension, active) VALUES
 ('$ADMIN_USER_ID', 'bitcoinswitch', 1);
+SQL
+  fi
+
+  # Install laisee if it exists
+  if [ -d "../laisee_extension" ]; then
+    sqlite3 /tmp/enable-extensions-$LITD_NAME.db << SQL
+-- Ensure Laisee extension is installed
+INSERT OR REPLACE INTO installed_extensions (id, version, name, short_description, icon, active, meta) VALUES
+('laisee', '$LAISEE_DB_VERSION', 'Laisee', 'Digital red envelopes – pay once, withdraw once', '/laisee/static/laisee.png', 1, '{"installed_release": {"name": "laisee", "version": "$LAISEE_DB_VERSION", "archive": "local", "source_repo": "local"}}');
+
+-- Enable Laisee for admin user
+INSERT OR REPLACE INTO extensions ("user", extension, active) VALUES
+('$ADMIN_USER_ID', 'laisee', 1);
 SQL
   fi
 

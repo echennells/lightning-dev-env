@@ -5,15 +5,26 @@
       "name": "stable",
       "description": "Current stable releases",
       "versions": {
-        "bitcoin_core": "30.0",
-        "litd": "v0.16.0-alpha",
-        "lnd": "0.18.4-beta",
-        "lnbits": "v1.4.2",
-        "lnurlp_ext": "1.2.0",
+        "bitcoin_core": "30.2",
+        "litd": "v0.16.1-alpha",
+        "lnd": "v0.20.1-beta",
+        "lnbits": "v1.5.3",
+        "lnurlp_ext": "1.3.0",
         "withdraw_ext": "1.2.2",
         "lnurlflip_ext": "main",
         "taproot_assets_ext": "main",
-        "bitcoinswitch_ext": "main"
+        "bitcoinswitch_ext": "main",
+        "laisee_ext": "v0.7"
+      },
+      "build_from_source": {
+        "lnd": {
+          "repo": "https://github.com/lightningnetwork/lnd.git",
+          "branch": "v0.20.1-beta",
+          "dockerfile": "Dockerfile",
+          "build_args": {
+            "checkout": "v0.20.1-beta"
+          }
+        }
       }
     },
     {
@@ -28,7 +39,8 @@
         "withdraw_ext": "1.2.2",
         "lnurlflip_ext": "main",
         "taproot_assets_ext": "main",
-        "bitcoinswitch_ext": "main"
+        "bitcoinswitch_ext": "main",
+        "laisee_ext": "v0.7"
       },
       "build_from_source": {
         "lnbits": {
@@ -50,7 +62,8 @@
         "withdraw_ext": "1.0.1",
         "lnurlflip_ext": "main",
         "taproot_assets_ext": "main",
-        "bitcoinswitch_ext": "main"
+        "bitcoinswitch_ext": "main",
+        "laisee_ext": "v0.7"
       }
     }
   ],
@@ -80,6 +93,11 @@
     "bitcoinswitch": {
       "repo": "https://github.com/echennells/bitcoinswitch",
       "version_type": "branch"
+    },
+    "laisee": {
+      "repo": "https://github.com/Liongrass/laisee_extension",
+      "version_type": "tag",
+      "install_as": "laisee"
     }
   }
 }

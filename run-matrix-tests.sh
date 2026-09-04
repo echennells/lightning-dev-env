@@ -116,6 +116,7 @@ while IFS= read -r version_set; do
   LNBITS_VERSION=$(echo "$version_set" | jq -r '.versions.lnbits')
   TAPROOT_ASSETS_VERSION=$(echo "$version_set" | jq -r '.versions.taproot_assets_ext')
   BITCOINSWITCH_VERSION=$(echo "$version_set" | jq -r '.versions.bitcoinswitch_ext')
+  LAISEE_VERSION=$(echo "$version_set" | jq -r '.versions.laisee_ext // "v0.7"')
 
   # Display version configuration
   echo -e "${CYAN}Version Configuration:${NC}"
@@ -134,6 +135,7 @@ while IFS= read -r version_set; do
   export LNBITS_VERSION="$LNBITS_VERSION"
   export TAPROOT_ASSETS_VERSION="$TAPROOT_ASSETS_VERSION"
   export BITCOINSWITCH_VERSION="$BITCOINSWITCH_VERSION"
+  export LAISEE_VERSION="$LAISEE_VERSION"
 
   # Set LNBITS_IMAGE for dev builds (local images)
   if [ "$LNBITS_VERSION" = "dev" ]; then
@@ -149,6 +151,13 @@ while IFS= read -r version_set; do
   else
     # Unset LITD_IMAGE for official versions (let docker-compose use default)
     unset LITD_IMAGE
+  fi
+
+  # Set LND_IMAGE when this version set builds lnd from source
+  if echo "$version_set" | jq -e '.build_from_source.lnd' > /dev/null 2>&1; then
+    export LND_IMAGE="local-lnd:dev"
+  else
+    unset LND_IMAGE
   fi
 
   # Create timestamped result file
